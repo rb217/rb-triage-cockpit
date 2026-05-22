@@ -1,0 +1,14 @@
+{
+  "name": "triage-cockpit-api",
+  "version": "2.0.0",
+  "description": "Azure Functions backend for the Triage Cockpit",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0",
+    "@azure/identity": "^4.0.1",
+    "@azure/keyvault-secrets": "^4.8.0"
+  }
+}

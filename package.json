@@ -1,0 +1,9 @@
+{
+  "name": "rb-triage-cockpit",
+  "version": "2.0.0",
+  "description": "Renovation Brands IT triage dashboard with Freshservice + Claude integration",
+  "private": true,
+  "scripts": {
+    "start": "swa start public --api-location api"
+  }
+}
