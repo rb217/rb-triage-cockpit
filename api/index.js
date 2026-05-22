@@ -11,5 +11,3 @@ require("./replyDraft/index");
 require("./replySend/index");
 require("./settingsAutoReply/index");
 require("./webhookTicketCreated/index");
-require("./patternsScheduled/index");
-require("./offboardScheduled/index");
