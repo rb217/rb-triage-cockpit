@@ -8,8 +8,6 @@ const { SecretClient } = require("@azure/keyvault-secrets");
 const KV_NAME = process.env.KEY_VAULT_NAME;
 const FS_DOMAIN = process.env.FRESHSERVICE_DOMAIN;
 
-// Cache secrets for the lifetime of the Function instance
-// (warm starts reuse this; cold starts refetch)
 let _kvClient = null;
 const _secretCache = new Map();
 
@@ -29,9 +27,6 @@ async function getSecret(name) {
   return secret.value;
 }
 
-// ============================================================
-// Auth: parse SWA's x-ms-client-principal header
-// ============================================================
 function getPrincipal(request) {
   const header = request.headers.get("x-ms-client-principal");
   if (!header) return null;
@@ -46,12 +41,9 @@ function getPrincipal(request) {
 function isInItTeam(principal) {
   if (!principal) return false;
   const roles = principal.userRoles || [];
-  return roles.includes("it-team");
+  return roles.includes("itteam") || roles.includes("it-team");
 }
 
-// ============================================================
-// Freshservice API
-// ============================================================
 async function fsRequest(path, options = {}) {
   const apiKey = await getSecret(process.env.FRESHSERVICE_API_KEY_SETTING || "FRESHSERVICE-API-KEY");
   const auth = Buffer.from(`${apiKey}:X`).toString("base64");
@@ -71,17 +63,7 @@ async function fsRequest(path, options = {}) {
   return res.json();
 }
 
-async function fsGetTickets({ filter = "new_and_my_open", page = 1, perPage = 100, includeStats = true } = {}) {
-  const include = includeStats ? "&include=stats" : "";
-  // Freshservice filter values: new_and_my_open, watching, spam, deleted
-  // For all open: use ?filter=new_and_my_open or query by query params
-  const data = await fsRequest(`/tickets?filter=${filter}&per_page=${perPage}&page=${page}${include}`);
-  return data.tickets || [];
-}
-
 async function fsGetAllOpenTickets() {
-  // Pull all open + pending + hold tickets across the group
-  // Freshservice statuses: 2=open, 3=pending, 6=hold
   const queries = [];
   for (const status of [2, 3, 6]) {
     queries.push(`status:${status}`);
@@ -97,7 +79,6 @@ async function fsGetTicket(id) {
 }
 
 async function fsUpdateTicket(id, fields) {
-  // fields: {status, priority, responder_id, category, sub_category, ...}
   return fsRequest(`/tickets/${id}`, {
     method: "PUT",
     body: JSON.stringify(fields)
@@ -112,7 +93,6 @@ async function fsAddNote(id, body, isPrivate = false) {
 }
 
 async function fsReplyToTicket(id, body) {
-  // Sends a public reply to the requester
   return fsRequest(`/tickets/${id}/reply`, {
     method: "POST",
     body: JSON.stringify({ body })
@@ -120,7 +100,6 @@ async function fsReplyToTicket(id, body) {
 }
 
 async function fsGetClosedTickets(limit = 200) {
-  // Last N closed/resolved tickets — used for "similar past tickets" matching
   const q = encodeURIComponent(`"status:4 OR status:5"`);
   const data = await fsRequest(`/tickets/filter?query=${q}&per_page=${Math.min(limit, 100)}`);
   return (data.tickets || []).slice(0, limit);
@@ -136,7 +115,6 @@ async function fsGetRequester(id) {
   return data.requester;
 }
 
-// Lookup an agent by name (case-insensitive). Returns id or null.
 async function fsFindAgentByName(name) {
   if (!name) return null;
   const agents = await fsGetAgentMap();
@@ -148,7 +126,6 @@ async function fsFindAgentByName(name) {
   return null;
 }
 
-// Cache agent lookup since it rarely changes
 let _agentsCache = null;
 let _agentsCacheTime = 0;
 async function fsGetAgentMap() {
@@ -168,9 +145,6 @@ async function fsGetAgentMap() {
   return map;
 }
 
-// ============================================================
-// Claude API
-// ============================================================
 async function callClaude(prompt, { maxTokens = 1000, model = "claude-sonnet-4-20250514" } = {}) {
   const apiKey = await getSecret(process.env.ANTHROPIC_API_KEY_SETTING || "ANTHROPIC-API-KEY");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -199,9 +173,6 @@ function parseJsonResponse(text) {
   return JSON.parse(clean);
 }
 
-// ============================================================
-// Teams webhook (for scheduled pattern detection)
-// ============================================================
 async function postTeamsCard(card) {
   const url = await getSecret(process.env.TEAMS_WEBHOOK_URL_SETTING || "TEAMS-WEBHOOK-URL");
   const res = await fetch(url, {
