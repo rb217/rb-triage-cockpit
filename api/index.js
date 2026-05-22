@@ -1,6 +1,6 @@
 // api/index.js
 // Entry point — loads all Azure Functions v4 handlers
-
+require("./healthcheck/index");
 require("./tickets/index");
 require("./aiTriage/index");
 require("./applyChanges/index");
