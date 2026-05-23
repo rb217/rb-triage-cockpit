@@ -6,11 +6,11 @@
     },
     {
       "route": "/api/*",
-      "allowedRoles": ["itteam"]
+      "allowedRoles": ["it-team"]
     },
     {
       "route": "/*",
-      "allowedRoles": ["itteam"]
+      "allowedRoles": ["it-team"]
     }
   ],
   "responseOverrides": {
@@ -27,7 +27,7 @@
     "identityProviders": {
       "azureActiveDirectory": {
         "registration": {
-          "openIdIssuer": "https://login.microsoftonline.com/9dcff8ae-c486-407a-b039-ce9cbecc2eea/v2.0",
+          "openIdIssuer": "https://login.microsoftonline.com/<YOUR-TENANT-ID>/v2.0",
           "clientIdSettingName": "AAD_CLIENT_ID",
           "clientSecretSettingName": "AAD_CLIENT_SECRET"
         }
