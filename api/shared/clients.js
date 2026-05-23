@@ -25,7 +25,6 @@ async function getSecret(name) {
   return secret.value;
 }
 
-// v3 model: req is the Azure Functions v3 request object (not a Web API Request)
 function getPrincipal(req) {
   const header = req.headers && (req.headers["x-ms-client-principal"] || req.headers.get?.("x-ms-client-principal"));
   if (!header) return null;
@@ -64,8 +63,7 @@ async function fsRequest(path, options = {}) {
 }
 
 async function fsGetAllOpenTickets() {
-  const q = encodeURIComponent('"status:2 OR status:3 OR status:6"');
-  const data = await fsRequest(`/tickets/filter?query=${q}&per_page=100`);
+  const data = await fsRequest(`/tickets?filter=new_and_my_open&per_page=100&include=stats`);
   return data.tickets || [];
 }
 
@@ -87,8 +85,7 @@ async function fsReplyToTicket(id, body) {
 }
 
 async function fsGetClosedTickets(limit = 200) {
-  const q = encodeURIComponent('"status:4 OR status:5"');
-  const data = await fsRequest(`/tickets/filter?query=${q}&per_page=${Math.min(limit, 100)}`);
+  const data = await fsRequest(`/tickets?filter=resolved&per_page=${Math.min(limit, 100)}`);
   return (data.tickets || []).slice(0, limit);
 }
 
