@@ -63,7 +63,7 @@ async function fsRequest(path, options = {}) {
 }
 
 async function fsGetAllOpenTickets() {
-  const data = await fsRequest(`/tickets?filter=new_and_my_open&per_page=100&include=stats`);
+  const data = await fsRequest(`/tickets?per_page=100`);
   return data.tickets || [];
 }
 
