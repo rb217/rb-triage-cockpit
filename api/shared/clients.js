@@ -1,17 +1,20 @@
 // api/shared/clients.js — v3 model compatible
 
-const { DefaultAzureCredential } = require("@azure/identity");
+const { ManagedIdentityCredential } = require("@azure/identity");
 const { SecretClient } = require("@azure/keyvault-secrets");
 
 const KV_NAME = process.env.KEY_VAULT_NAME;
 const FS_DOMAIN = process.env.FRESHSERVICE_DOMAIN;
+const MANAGED_IDENTITY_CLIENT_ID = process.env.MANAGED_IDENTITY_CLIENT_ID;
 
 let _kvClient = null;
 const _secretCache = new Map();
 
 function getKvClient() {
   if (!_kvClient) {
-    const credential = new DefaultAzureCredential();
+    // Use system-assigned managed identity
+    // For SWA managed Functions, ManagedIdentityCredential works better than DefaultAzureCredential
+    const credential = new ManagedIdentityCredential();
     _kvClient = new SecretClient(`https://${KV_NAME}.vault.azure.net`, credential);
   }
   return _kvClient;
