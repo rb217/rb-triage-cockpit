@@ -1287,23 +1287,28 @@ function applyFilters(){
 }
 
 function updateCounts(){
-  $("#totalCount").textContent = TICKETS.length;
-  $("#cnt-mine").textContent = TICKETS.filter(isMine).length;
-  $("#cnt-team").textContent = TICKETS.filter(isTeam).length;
-  $("#cnt-unassigned").textContent = TICKETS.filter(t=>!t.responder_name).length;
-  $("#cnt-all").textContent = TICKETS.length;
+  // Only count active tickets (open=2, pending=3, hold=6) in sidebar and badges
+  const ACTIVE = new Set([2, 3, 6]);
+  const activeTickets = TICKETS.filter(t => ACTIVE.has(t.status));
+
+  $("#totalCount").textContent = activeTickets.length;
+  $("#cnt-mine").textContent = activeTickets.filter(isMine).length;
+  $("#cnt-team").textContent = activeTickets.filter(isTeam).length;
+  $("#cnt-unassigned").textContent = activeTickets.filter(t => !t.responder_name).length;
+  $("#cnt-all").textContent = activeTickets.length;
 
   const scoped = (() => {
-    if(FILTERS.scope==="mine") return TICKETS.filter(isMine);
-    if(FILTERS.scope==="team") return TICKETS.filter(isTeam);
-    if(FILTERS.scope==="unassigned") return TICKETS.filter(t=>!t.responder_name);
-    return TICKETS;
+    if(FILTERS.scope==="mine") return activeTickets.filter(isMine);
+    if(FILTERS.scope==="team") return activeTickets.filter(isTeam);
+    if(FILTERS.scope==="unassigned") return activeTickets.filter(t=>!t.responder_name);
+    return activeTickets;
   })();
   $("#cnt-stat-all").textContent = scoped.length;
-  [2,3,6].forEach(s=>$("#cnt-stat-"+s).textContent = scoped.filter(t=>t.status===s).length);
+  [2,3,6].forEach(s => $("#cnt-stat-"+s).textContent = scoped.filter(t => t.status===s).length);
   $("#cnt-prio-all").textContent = scoped.length;
-  [1,2,3,4].forEach(p=>$("#cnt-prio-"+p).textContent = scoped.filter(t=>t.priority===p).length);
+  [1,2,3,4].forEach(p => $("#cnt-prio-"+p).textContent = scoped.filter(t => t.priority===p).length);
 
+  // Stats strip uses full filtered list (respects all filters including closed)
   const visible = applyFilters();
   $("#stat-breach").textContent = visible.filter(t=>t.due_by && new Date(t.due_by)<new Date()).length;
   $("#stat-risk").textContent = visible.filter(t=>{
@@ -1316,19 +1321,20 @@ function updateCounts(){
   $("#stat-ai").textContent = visible.filter(t=>SUMMARIES.has(t.id)).length;
   $("#stat-ai-sub").textContent = "of "+visible.length+" visible";
 
-  // standup badge: new since last seen
-  const newCount = TICKETS.filter(isNew).length;
+  // Standup badge: new ACTIVE tickets since last seen
+  const newCount = activeTickets.filter(isNew).length;
   $("#standupBadge").textContent = newCount;
   $$(".modetab").forEach(t=>t.classList.remove("alert"));
   if(newCount>0) document.querySelector('[data-mode="standup"]').classList.add("alert");
 
-  // patterns badge
+  // Patterns badge — clear once viewed
   $("#patternsBadge").textContent = PATTERNS.length;
 
   $("#stagedCount").textContent = STAGED.length;
 }
 
 function renderList(){
+  _kbFocusIdx = -1; // reset keyboard nav on every render
   const list = applyFilters();
   const host = $("#ticketList");
   if(!list.length){
@@ -2304,42 +2310,94 @@ async function saveCurrentView(name){
 async function renderStandup(){
   const host = $("#mainStandup");
   const lastSeen = await storeGet("last_seen_ts");
-  const newSince = lastSeen ? TICKETS.filter(t=>new Date(t.created_at) > new Date(lastSeen)) : [];
-  const breached = TICKETS.filter(t=>t.due_by && new Date(t.due_by)<new Date() && isMine(t));
-  const atRisk = TICKETS.filter(t=>{
+
+  // Only count ACTIVE tickets (open=2, pending=3, hold=6)
+  const ACTIVE_STATUSES = new Set([2, 3, 6]);
+  const activeTickets = TICKETS.filter(t => ACTIVE_STATUSES.has(t.status));
+
+  const newSince = lastSeen
+    ? activeTickets.filter(t => new Date(t.created_at) > new Date(lastSeen))
+    : [];
+  const breached = activeTickets.filter(t => t.due_by && new Date(t.due_by) < new Date() && isMine(t));
+  const atRisk = activeTickets.filter(t => {
     if(!isMine(t) || !t.due_by) return false;
     const ms = new Date(t.due_by) - Date.now();
-    return ms>0 && ms<4*3600000;
+    return ms > 0 && ms < 4 * 3600000;
   });
-  const urgent = TICKETS.filter(t=>isMine(t) && t.priority===4);
-  const stale = TICKETS.filter(t=>isMine(t) && ageHours(t.created_at)>168);
-  const myOpen = TICKETS.filter(isMine);
-  const unassigned = TICKETS.filter(t=>!t.responder_name);
+  const urgent = activeTickets.filter(t => isMine(t) && t.priority === 4);
+  const stale = activeTickets.filter(t => isMine(t) && ageHours(t.created_at) > 168);
+  const myOpen = activeTickets.filter(isMine);
+  const unassigned = activeTickets.filter(t => !t.responder_name);
 
-  const today = new Date().toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  // Team breakdown
+  const steveOpen = activeTickets.filter(t => t.responder_name?.toLowerCase().includes("steve")).length;
+  const ericOpen = activeTickets.filter(t => t.responder_name?.toLowerCase().includes("eric")).length;
+
+  const today = new Date().toLocaleDateString(undefined, {weekday:"long", year:"numeric", month:"long", day:"numeric"});
   const last = lastSeen ? new Date(lastSeen).toLocaleString() : "first visit";
 
-  // AI-prioritized triage queue (top 5 things to do first)
+  // Get first name from principal
+  const firstName = ME?.name?.split(" ")[0] || ME?.email?.split("@")[0] || "there";
+
   const queueHost = '<div id="aiQueueHost"><div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:11px"><span class="loader"></span> Generating AI priority queue...</div></div>';
 
   host.innerHTML = `
     <div class="standup-card">
-      <h2>Good ${getTimeOfDay()}, Nathan</h2>
+      <h2>Good ${getTimeOfDay()}, ${firstName}</h2>
       <div class="sub">${today} · Last visit: ${last}</div>
-      <div class="standup-row"><span class="lbl">New since last visit</span><span class="val ${newSince.length>0?'warn':'ok'}">${newSince.length}</span></div>
-      <div class="standup-row"><span class="lbl">My open tickets</span><span class="val">${myOpen.length}</span></div>
-      <div class="standup-row"><span class="lbl">SLA breached</span><span class="val ${breached.length>0?'alert':'ok'}">${breached.length}</span></div>
-      <div class="standup-row"><span class="lbl">At risk (&lt; 4h to SLA)</span><span class="val ${atRisk.length>0?'warn':'ok'}">${atRisk.length}</span></div>
-      <div class="standup-row"><span class="lbl">Stale (&gt;7d)</span><span class="val ${stale.length>0?'warn':'ok'}">${stale.length}</span></div>
-      <div class="standup-row"><span class="lbl">Unassigned in queue</span><span class="val ${unassigned.length>0?'warn':''}">${unassigned.length}</span></div>
+      <div class="standup-row"><span class="lbl">New since last visit</span><span class="val ${newSince.length>0?"warn":"ok"}">${newSince.length}</span></div>
+      <div class="standup-row"><span class="lbl">My active tickets</span><span class="val">${myOpen.length}</span></div>
+      <div class="standup-row"><span class="lbl">SLA breached</span><span class="val ${breached.length>0?"alert":"ok"}">${breached.length}</span></div>
+      <div class="standup-row"><span class="lbl">At risk (&lt; 4h to SLA)</span><span class="val ${atRisk.length>0?"warn":"ok"}">${atRisk.length}</span></div>
+      <div class="standup-row"><span class="lbl">Stale (&gt; 7d, no update)</span><span class="val ${stale.length>0?"warn":"ok"}">${stale.length}</span></div>
+      <div class="standup-row"><span class="lbl">Unassigned</span><span class="val ${unassigned.length>0?"warn":""}">${unassigned.length}</span></div>
+    </div>
+
+    <div class="standup-card">
+      <h2>Team snapshot</h2>
+      <div class="sub">active tickets by agent right now</div>
+      <div class="standup-row">
+        <span class="lbl" style="display:flex;align-items:center;gap:6px">
+          <span style="width:22px;height:22px;border-radius:50%;background:rgba(99,102,241,0.2);color:#6366f1;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">NM</span>
+          Nathan Maharg
+        </span>
+        <span class="val">${myOpen.length}</span>
+      </div>
+      <div class="standup-row">
+        <span class="lbl" style="display:flex;align-items:center;gap:6px">
+          <span style="width:22px;height:22px;border-radius:50%;background:rgba(74,222,128,0.2);color:#4ade80;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">SM</span>
+          Steve Mitchell
+        </span>
+        <span class="val">${steveOpen}</span>
+      </div>
+      <div class="standup-row">
+        <span class="lbl" style="display:flex;align-items:center;gap:6px">
+          <span style="width:22px;height:22px;border-radius:50%;background:rgba(251,191,36,0.2);color:#fbbf24;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">EH</span>
+          Eric Hnatov
+        </span>
+        <span class="val">${ericOpen}</span>
+      </div>
+      <div class="standup-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <span class="lbl">Total active queue</span>
+        <span class="val">${activeTickets.length}</span>
+      </div>
     </div>
 
     <div class="standup-card">
       <h2>What changed</h2>
-      <div class="sub">since your last visit</div>
+      <div class="sub">new active tickets since your last visit</div>
       ${newSince.length === 0
         ? `<div style="color:var(--ink-ghost);font-size:12px;font-style:italic;padding:8px 0">No new tickets since you were last here. ☕</div>`
         : `<div class="standup-list">${newSince.slice(0,8).map((t,i)=>renderStandupItem(t,i+1,"NEW")).join("")}</div>`
+      }
+    </div>
+
+    <div class="standup-card">
+      <h2>Needs attention</h2>
+      <div class="sub">urgent + high priority active tickets</div>
+      ${urgent.length === 0
+        ? `<div style="color:var(--ink-ghost);font-size:12px;font-style:italic;padding:8px 0">No urgent tickets right now. 🎉</div>`
+        : `<div class="standup-list">${urgent.slice(0,6).map((t,i)=>renderStandupItem(t,i+1,"URGENT")).join("")}</div>`
       }
     </div>
 
@@ -2351,21 +2409,24 @@ async function renderStandup(){
   `;
 
   // wire row clicks
-  host.querySelectorAll(".si").forEach(el=>el.addEventListener("click",()=>{
+  host.querySelectorAll(".si").forEach(el => el.addEventListener("click", () => {
     const id = parseInt(el.dataset.tid);
     switchMode("triage");
     selectTicket(id);
   }));
 
   // generate AI priority queue
-  const candidates = [...breached, ...atRisk, ...urgent, ...stale, ...myOpen].filter((t,i,a)=>a.findIndex(x=>x.id===t.id)===i).slice(0,15);
+  const candidates = [...breached, ...atRisk, ...urgent, ...stale, ...myOpen]
+    .filter((t,i,a) => a.findIndex(x => x.id === t.id) === i)
+    .slice(0, 15);
+
   if(candidates.length){
     try{
       const queue = await generateAIQueue(candidates);
       const qhost = $("#aiQueueHost");
       if(qhost && queue.length){
-        qhost.innerHTML = `<div class="standup-list">${queue.map((q,i)=>{
-          const t = TICKETS.find(x=>x.id===q.id);
+        qhost.innerHTML = `<div class="standup-list">${queue.map((q,i) => {
+          const t = TICKETS.find(x => x.id === q.id);
           if(!t) return "";
           return `<div class="si" data-tid="${t.id}">
             <div class="si-num">${i+1}</div>
@@ -2377,7 +2438,7 @@ async function renderStandup(){
             <span class="pill ${PRIO_CLASS[t.priority]||""} si-prio">${PRIO_MAP[t.priority]||"?"}</span>
           </div>`;
         }).join("")}</div>`;
-        qhost.querySelectorAll(".si").forEach(el=>el.addEventListener("click",()=>{
+        qhost.querySelectorAll(".si").forEach(el => el.addEventListener("click", () => {
           switchMode("triage");
           selectTicket(parseInt(el.dataset.tid));
         }));
@@ -2387,10 +2448,11 @@ async function renderStandup(){
     } catch(e){
       console.error(e);
       const qhost = $("#aiQueueHost");
-      if(qhost) qhost.innerHTML = `<div style="color:var(--danger);font-size:11px">AI queue generation failed: ${escape(e.message)}</div>`;
+      if(qhost) qhost.innerHTML = `<div style="color:var(--danger);font-size:11px">AI queue unavailable: ${escape(e.message)}</div>`;
     }
   } else {
-    $("#aiQueueHost").innerHTML = `<div style="color:var(--ink-ghost);font-style:italic;padding:8px 0;font-size:12px">No tickets need your attention right now. 🎉</div>`;
+    const qhost = $("#aiQueueHost");
+    if(qhost) qhost.innerHTML = `<div style="color:var(--ink-ghost);font-style:italic;padding:8px 0;font-size:12px">No tickets need your attention right now. 🎉</div>`;
   }
 
   // mark this as the new "last seen"
@@ -2575,7 +2637,8 @@ async function fetchTickets({silent=false}={}){
     TICKETS = (data.open || []).map(normalizeTicket);
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
-    setConn("Fs", `connected · ${TICKETS.length} open`, "ok");
+    const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
+    setConn("Fs", `connected · ${activeCount} active`, "ok");
     setConn("Ai", "ready", "ok");
     setConn("Last", new Date(LAST_FETCH).toLocaleTimeString(), "ok");
     // Preserve current selection if the ticket still exists
