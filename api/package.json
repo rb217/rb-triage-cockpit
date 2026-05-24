@@ -5,8 +5,5 @@
   "scripts": {
     "start": "func start"
   },
-  "dependencies": {
-    "@azure/identity": "3.3.0",
-    "@azure/keyvault-secrets": "4.8.0"
-  }
+  "dependencies": {}
 }
