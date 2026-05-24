@@ -1,31 +1,18 @@
-// api/shared/clients.js — v3 model compatible
+// api/shared/clients.js — reads secrets from env vars (no Key Vault)
 
-const { ManagedIdentityCredential } = require("@azure/identity");
-const { SecretClient } = require("@azure/keyvault-secrets");
-
-const KV_NAME = process.env.KEY_VAULT_NAME;
 const FS_DOMAIN = process.env.FRESHSERVICE_DOMAIN;
-const MANAGED_IDENTITY_CLIENT_ID = process.env.MANAGED_IDENTITY_CLIENT_ID;
 
-let _kvClient = null;
-const _secretCache = new Map();
-
-function getKvClient() {
-  if (!_kvClient) {
-    // Use system-assigned managed identity
-    // For SWA managed Functions, ManagedIdentityCredential works better than DefaultAzureCredential
-    const credential = new ManagedIdentityCredential();
-    _kvClient = new SecretClient(`https://${KV_NAME}.vault.azure.net`, credential);
-  }
-  return _kvClient;
-}
-
-async function getSecret(name) {
-  if (_secretCache.has(name)) return _secretCache.get(name);
-  const client = getKvClient();
-  const secret = await client.getSecret(name);
-  _secretCache.set(name, secret.value);
-  return secret.value;
+function getSecret(name) {
+  const envMap = {
+    "FRESHSERVICE-API-KEY": process.env.FRESHSERVICE_API_KEY,
+    "ANTHROPIC-API-KEY": process.env.ANTHROPIC_API_KEY,
+    "TEAMS-WEBHOOK-URL": process.env.TEAMS_WEBHOOK_URL,
+    "FRESHSERVICE-WEBHOOK-SECRET": process.env.FRESHSERVICE_WEBHOOK_SECRET,
+    "AUTO-REPLY-SETTINGS": process.env.AUTO_REPLY_SETTINGS
+  };
+  const value = envMap[name];
+  if (!value) throw new Error(`Secret not found: ${name}`);
+  return Promise.resolve(value);
 }
 
 function getPrincipal(req) {
@@ -46,7 +33,7 @@ function isInItTeam(principal) {
 }
 
 async function fsRequest(path, options = {}) {
-  const apiKey = await getSecret(process.env.FRESHSERVICE_API_KEY_SETTING || "FRESHSERVICE-API-KEY");
+  const apiKey = await getSecret("FRESHSERVICE-API-KEY");
   const auth = Buffer.from(`${apiKey}:X`).toString("base64");
   const url = `https://${FS_DOMAIN}/api/v2${path}`;
   const res = await fetch(url, {
@@ -128,7 +115,7 @@ async function fsGetAgentMap() {
 }
 
 async function callClaude(prompt, { maxTokens = 1000, model = "claude-sonnet-4-20250514" } = {}) {
-  const apiKey = await getSecret(process.env.ANTHROPIC_API_KEY_SETTING || "ANTHROPIC-API-KEY");
+  const apiKey = await getSecret("ANTHROPIC-API-KEY");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
@@ -145,7 +132,7 @@ function parseJsonResponse(text) {
 }
 
 async function postTeamsCard(card) {
-  const url = await getSecret(process.env.TEAMS_WEBHOOK_URL_SETTING || "TEAMS-WEBHOOK-URL");
+  const url = await getSecret("TEAMS-WEBHOOK-URL");
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(card) });
   if (!res.ok) { const text = await res.text(); throw new Error(`Teams ${res.status}: ${text.slice(0, 300)}`); }
   return true;
