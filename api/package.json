@@ -1,9 +1,0 @@
-{
-  "name": "triage-cockpit-api",
-  "version": "3.0.0",
-  "description": "Azure Functions backend for the Triage Cockpit",
-  "scripts": {
-    "start": "func start"
-  },
-  "dependencies": {}
-}
