@@ -820,7 +820,7 @@
 
   <!-- DEVICES VIEW -->
   <div class="hidden" id="mainDevices" style="overflow-y:auto;padding:20px 24px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div>
         <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">Device Management</h2>
         <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Retriever warehouse inventory · returns · deployments</div>
@@ -833,39 +833,70 @@
     </div>
 
     <!-- Balances strip -->
-    <div id="balancesStrip" style="display:flex;gap:10px;margin-bottom:20px"></div>
+    <div id="balancesStrip" style="display:flex;gap:10px;margin-bottom:16px"></div>
+
+    <!-- Filter bar -->
+    <div style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:8px;margin-bottom:16px;align-items:center">
+      <div style="position:relative">
+        <input id="devSearch" type="text" placeholder="Search by name, serial, employee…"
+          style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 12px 8px 32px;font-family:var(--sans);font-size:13px;outline:none"
+          oninput="filterDevices()"/>
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:14px">🔍</span>
+      </div>
+      <select id="devStatusFilter" onchange="filterDevices()"
+        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none">
+        <option value="">All statuses</option>
+        <option value="ready_for_deployment">Ready</option>
+        <option value="deployed">Deployed</option>
+        <option value="disposed">Disposed</option>
+        <option value="in_transit">In Transit</option>
+        <option value="received_at_warehouse">At Warehouse</option>
+        <option value="box_delivered">Box Delivered</option>
+      </select>
+      <select id="devTypeFilter" onchange="filterDevices()"
+        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none">
+        <option value="">All types</option>
+        <option value="laptop">Laptop</option>
+        <option value="monitor">Monitor</option>
+        <option value="phone">Phone</option>
+      </select>
+      <input id="devDateFrom" type="date" onchange="filterDevices()" title="From date"
+        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none"/>
+      <input id="devDateTo" type="date" onchange="filterDevices()" title="To date"
+        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none"/>
+    </div>
 
     <!-- Three panels -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
       <!-- Warehouse -->
-      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius)">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <div style="font-size:13px;font-weight:700">Warehouse Inventory</div>
           <div style="font-size:11px;color:var(--ink-dim)" id="warehouseCount">—</div>
         </div>
-        <div id="warehouseList" style="padding:8px;max-height:400px;overflow-y:auto">
+        <div id="warehouseList" style="padding:8px;overflow-y:auto;flex:1;max-height:520px">
           <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
         </div>
       </div>
 
       <!-- Active Returns -->
-      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius)">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <div style="font-size:13px;font-weight:700">Active Returns</div>
           <div style="font-size:11px;color:var(--ink-dim)" id="returnsCount">—</div>
         </div>
-        <div id="returnsList" style="padding:8px;max-height:400px;overflow-y:auto">
+        <div id="returnsList" style="padding:8px;overflow-y:auto;flex:1;max-height:520px">
           <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
         </div>
       </div>
 
       <!-- Active Deployments -->
-      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius)">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <div style="font-size:13px;font-weight:700">Active Deployments</div>
           <div style="font-size:11px;color:var(--ink-dim)" id="deploymentsCount">—</div>
         </div>
-        <div id="deploymentsList" style="padding:8px;max-height:400px;overflow-y:auto">
+        <div id="deploymentsList" style="padding:8px;overflow-y:auto;flex:1;max-height:520px">
           <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
         </div>
       </div>
@@ -3052,96 +3083,211 @@ async function loadDevices() {
   }
 }
 
+// Device name helper
+function deviceName(d) {
+  return [d.manufacturer, d.model].filter(Boolean).join(" ") || d.device_series || "Device";
+}
+
+// Status badge helper
+function deviceStatusBadge(status) {
+  const s = (status || "unknown").toLowerCase();
+  const map = {
+    ready_for_deployment: { color: "var(--ok)", bg: "var(--ok-dim)", label: "READY" },
+    deployed: { color: "var(--accent)", bg: "var(--accent-dim)", label: "DEPLOYED" },
+    disposed: { color: "var(--ink-ghost)", bg: "var(--panel-2)", label: "DISPOSED" },
+    in_transit: { color: "var(--info)", bg: "rgba(96,165,250,0.1)", label: "IN TRANSIT" },
+    received_at_warehouse: { color: "var(--ok)", bg: "var(--ok-dim)", label: "AT WAREHOUSE" },
+    box_delivered: { color: "var(--warn)", bg: "var(--warn-dim)", label: "BOX DELIVERED" },
+    return_in_transit: { color: "var(--info)", bg: "rgba(96,165,250,0.1)", label: "RETURN IN TRANSIT" },
+  };
+  const style = map[s] || { color: "var(--ink-dim)", bg: "var(--panel-2)", label: s.toUpperCase().replace(/_/g, " ") };
+  return `<span style="background:${style.bg};color:${style.color};padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">${style.label}</span>`;
+}
+
 function renderDevicesTab(data) {
   // Balances
   const bs = document.getElementById("balancesStrip");
   if (bs && data.balances && Array.isArray(data.balances)) {
     bs.innerHTML = data.balances.map(b => `
-      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 16px;display:flex;flex-direction:column;gap:2px">
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 16px;display:flex;flex-direction:column;gap:2px;min-width:120px">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">${b.device_type || "Balance"}</div>
-        <div style="font-size:22px;font-weight:800;color:var(--accent);letter-spacing:-1px">${b.quantity || 0}</div>
+        <div style="font-size:22px;font-weight:800;color:var(--accent);letter-spacing:-1px">${b.quantity ?? 0}</div>
         <div style="font-size:11px;color:var(--ink-dim)">prepaid credits</div>
       </div>
     `).join("");
   }
 
-  // Warehouse
-  const wl = document.getElementById("warehouseList");
-  const warehouseItems = data.warehouse?.results || [];
-  document.getElementById("warehouseCount").textContent = `${warehouseItems.length} devices`;
-  if (!warehouseItems.length) {
-    wl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No devices in warehouse</div>`;
-  } else {
-    wl.innerHTML = warehouseItems.map(d => `
-      <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:5px">
-        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:5px">
-          <div style="font-size:12px;font-weight:700;color:var(--accent);font-family:var(--mono)">${d.id}</div>
-          <span style="background:var(--ok-dim);color:var(--ok);padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700">${(d.status||"available").toUpperCase()}</span>
-        </div>
-        <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:3px">${d.device_type || d.type || "Device"}</div>
-        ${d.serial_number ? `<div style="font-size:11px;color:var(--ink-dim)">SN: ${d.serial_number}</div>` : ""}
-        <button class="btn" style="width:100%;margin-top:8px;font-size:11px;justify-content:center" onclick="openDeployFromWarehouse('${d.id}','${(d.device_type||"Device").replace(/'/g,"'")}')">🚀 Deploy</button>
-      </div>
-    `).join("");
-  }
+  renderWarehouse(data.warehouse?.results || []);
+  renderReturns(data.returns?.results || []);
+  renderDeployments(data.deployments?.results || []);
 
-  // Returns
-  const rl = document.getElementById("returnsList");
-  const returnItems = data.returns?.results || [];
-  document.getElementById("returnsCount").textContent = `${returnItems.length} orders`;
-  if (!returnItems.length) {
-    rl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No active returns</div>`;
-  } else {
-    rl.innerHTML = returnItems.map(r => {
-      const ship = r.shipments?.[0] || {};
-      const statusColor = ship.status === "delivered" ? "var(--ok)" : ship.status === "in_transit" ? "var(--accent)" : "var(--ink-dim)";
-      return `
-        <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:5px">
-          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px">
-            <div style="font-size:12px;font-weight:700;color:var(--accent);font-family:var(--mono)">#${r.id}</div>
-            <span style="color:${statusColor};font-size:10px;font-weight:700">${(ship.status||"created").toUpperCase().replace(/_/g," ")}</span>
-          </div>
-          <div style="font-size:12px;font-weight:600;color:var(--ink)">${r.employee_info?.name || "Unknown"}</div>
-          <div style="font-size:11px;color:var(--ink-dim)">${r.device || "Laptop"} · ${r.employee_info?.address_city || ""}</div>
-          ${ship.tracking_number ? `<div style="font-size:11px;color:var(--info);margin-top:3px">📍 ${ship.carrier?.toUpperCase() || ""} ${ship.tracking_number}</div>` : ""}
-          <div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">${r.created_at ? new Date(r.created_at).toLocaleDateString() : ""}</div>
-        </div>
-      `;
-    }).join("");
-  }
-
-  // Deployments
-  const dl = document.getElementById("deploymentsList");
-  const deployItems = data.deployments?.results || [];
-  document.getElementById("deploymentsCount").textContent = `${deployItems.length} orders`;
-  if (!deployItems.length) {
-    dl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No active deployments</div>`;
-  } else {
-    dl.innerHTML = deployItems.map(d => {
-      const ship = d.shipment || {};
-      const statusColor = ship.status === "delivered" ? "var(--ok)" : ship.status === "in_transit" ? "var(--accent)" : "var(--info)";
-      return `
-        <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:5px">
-          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px">
-            <div style="font-size:12px;font-weight:700;color:var(--accent);font-family:var(--mono)">#${d.id}</div>
-            <span style="color:${statusColor};font-size:10px;font-weight:700">${(ship.status||"created").toUpperCase().replace(/_/g," ")}</span>
-          </div>
-          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.employee_info?.name || "Unknown"}</div>
-          <div style="font-size:11px;color:var(--ink-dim)">${ship.device_type || "Device"} · ${d.employee_info?.address_city || ""}</div>
-          ${ship.tracking_number ? `<div style="font-size:11px;color:var(--info);margin-top:3px">📍 ${(ship.carrier||"").toUpperCase()} ${ship.tracking_number}</div>` : ""}
-          <div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">${d.created_at ? new Date(d.created_at).toLocaleDateString() : ""}</div>
-        </div>
-      `;
-    }).join("");
-  }
-
-  // Populate deploy device select
+  // Populate deploy device select with proper names
   const depSel = document.getElementById("dep-device");
+  const warehouseItems = data.warehouse?.results || [];
   if (depSel) {
-    depSel.innerHTML = warehouseItems.length
-      ? `<option value="">Select a device…</option>` + warehouseItems.map(d => `<option value="${d.id}">${d.id} — ${d.device_type || "Device"}${d.serial_number ? ` (${d.serial_number})` : ""}</option>`).join("")
-      : `<option value="">No devices in warehouse</option>`;
+    const deployable = warehouseItems.filter(d => d.status === "ready_for_deployment");
+    depSel.innerHTML = deployable.length
+      ? `<option value="">Select a device…</option>` + deployable.map(d =>
+          `<option value="${d.id}">${deviceName(d)}${d.serial_number ? ` · ${d.serial_number}` : ""} (${d.id})</option>`
+        ).join("")
+      : `<option value="">No devices ready for deployment</option>`;
   }
+}
+
+function renderWarehouse(items) {
+  const wl = document.getElementById("warehouseList");
+  const query = document.getElementById("devSearch")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("devStatusFilter")?.value || "";
+  const typeF = document.getElementById("devTypeFilter")?.value || "";
+
+  let filtered = items.filter(d => {
+    const name = deviceName(d).toLowerCase();
+    const sn = (d.serial_number || "").toLowerCase();
+    const tag = (d.asset_tag || "").toLowerCase();
+    if (query && !name.includes(query) && !sn.includes(query) && !tag.includes(query)) return false;
+    if (statusF && d.status !== statusF) return false;
+    if (typeF) {
+      const model = deviceName(d).toLowerCase();
+      if (!model.includes(typeF)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById("warehouseCount").textContent = `${filtered.length} / ${items.length} devices`;
+
+  if (!filtered.length) {
+    wl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No devices match filters</div>`;
+    return;
+  }
+
+  wl.innerHTML = filtered.map(d => {
+    const name = deviceName(d);
+    const specs = [d.ram ? d.ram + " RAM" : null, d.disk ? d.disk + " disk" : null, d.processor].filter(Boolean).join(" · ");
+    const charger = d.has_charger ? `<span style="color:var(--ok);font-size:10px">⚡ Charger</span>` : "";
+    const canDeploy = d.status === "ready_for_deployment";
+    return `
+      <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;transition:.12s" 
+           onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono)">${d.id}</div>
+          ${deviceStatusBadge(d.status)}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px">${name}</div>
+        ${d.serial_number ? `<div style="font-size:11px;color:var(--ink-dim)">SN: ${d.serial_number}</div>` : ""}
+        ${d.asset_tag ? `<div style="font-size:11px;color:var(--ink-dim)">Tag: ${d.asset_tag}</div>` : ""}
+        ${specs ? `<div style="font-size:11px;color:var(--ink-ghost);margin-top:3px">${specs}</div>` : ""}
+        ${d.customer_name ? `<div style="font-size:11px;color:var(--info);margin-top:3px">👤 ${d.customer_name}</div>` : ""}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+          ${charger}
+          ${canDeploy
+            ? `<button class="btn primary" style="font-size:11px;padding:5px 12px" onclick="openDeployFromWarehouse('${d.id}','${name.replace(/'/g, "\\'")}')">🚀 Deploy</button>`
+            : `<button class="btn" style="font-size:11px;padding:5px 12px;opacity:.4;cursor:not-allowed" disabled>🚀 Deploy</button>`
+          }
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderReturns(items) {
+  const rl = document.getElementById("returnsList");
+  const query = document.getElementById("devSearch")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("devStatusFilter")?.value || "";
+  const dateFrom = document.getElementById("devDateFrom")?.value || "";
+  const dateTo = document.getElementById("devDateTo")?.value || "";
+
+  let filtered = items.filter(r => {
+    const name = (r.employee_info?.name || "").toLowerCase();
+    const city = (r.employee_info?.address_city || "").toLowerCase();
+    if (query && !name.includes(query) && !city.includes(query) && !r.id?.toLowerCase().includes(query)) return false;
+    const ship = r.shipments?.[0] || {};
+    if (statusF && ship.status !== statusF) return false;
+    if (dateFrom && r.created_at && r.created_at < dateFrom) return false;
+    if (dateTo && r.created_at && r.created_at.slice(0,10) > dateTo) return false;
+    return true;
+  });
+
+  document.getElementById("returnsCount").textContent = `${filtered.length} / ${items.length} orders`;
+
+  if (!filtered.length) {
+    rl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No returns match filters</div>`;
+    return;
+  }
+
+  rl.innerHTML = filtered.map(r => {
+    const ship = r.shipments?.[0] || {};
+    return `
+      <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;transition:.12s"
+           onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:5px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono)">#${r.id}</div>
+          ${deviceStatusBadge(ship.status || "created")}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink)">${r.employee_info?.name || "Unknown"}</div>
+        <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${r.device || "Laptop"} · ${r.employee_info?.address_city || ""}, ${r.employee_info?.address_state || ""}</div>
+        ${ship.tracking_number ? `
+          <div style="font-size:11px;color:var(--info);margin-top:4px;display:flex;align-items:center;gap:4px">
+            📍 <span style="font-weight:600">${(ship.carrier||"").toUpperCase()}</span> ${ship.tracking_number}
+          </div>` : ""}
+        ${r.ticket_id ? `<div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">FS #${r.ticket_id}</div>` : ""}
+        <div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">${r.created_at ? new Date(r.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderDeployments(items) {
+  const dl = document.getElementById("deploymentsList");
+  const query = document.getElementById("devSearch")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("devStatusFilter")?.value || "";
+  const dateFrom = document.getElementById("devDateFrom")?.value || "";
+  const dateTo = document.getElementById("devDateTo")?.value || "";
+
+  let filtered = items.filter(d => {
+    const name = (d.employee_info?.name || "").toLowerCase();
+    const city = (d.employee_info?.address_city || "").toLowerCase();
+    if (query && !name.includes(query) && !city.includes(query) && !d.id?.toLowerCase().includes(query)) return false;
+    const ship = d.shipment || {};
+    if (statusF && ship.status !== statusF) return false;
+    if (dateFrom && d.created_at && d.created_at < dateFrom) return false;
+    if (dateTo && d.created_at && d.created_at.slice(0,10) > dateTo) return false;
+    return true;
+  });
+
+  document.getElementById("deploymentsCount").textContent = `${filtered.length} / ${items.length} orders`;
+
+  if (!filtered.length) {
+    dl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No deployments match filters</div>`;
+    return;
+  }
+
+  dl.innerHTML = filtered.map(d => {
+    const ship = d.shipment || {};
+    return `
+      <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;transition:.12s"
+           onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:5px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono)">#${d.id}</div>
+          ${deviceStatusBadge(ship.status || "created")}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink)">${d.employee_info?.name || "Unknown"}</div>
+        <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${ship.device_type || "Device"} · ${d.employee_info?.address_city || ""}, ${d.employee_info?.address_state || ""}</div>
+        ${ship.tracking_number ? `
+          <div style="font-size:11px;color:var(--info);margin-top:4px;display:flex;align-items:center;gap:4px">
+            📍 <span style="font-weight:600">${(ship.carrier||"").toUpperCase()}</span> ${ship.tracking_number}
+          </div>` : ""}
+        ${d.ticket_id ? `<div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">FS #${d.ticket_id}</div>` : ""}
+        <div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">${d.created_at ? new Date(d.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function filterDevices() {
+  if (!_retrieverData) return;
+  renderWarehouse(_retrieverData.warehouse?.results || []);
+  renderReturns(_retrieverData.returns?.results || []);
+  renderDeployments(_retrieverData.deployments?.results || []);
 }
 
 function openDeployFromWarehouse(deviceId, deviceType) {
