@@ -835,71 +835,112 @@
     <!-- Balances strip -->
     <div id="balancesStrip" style="display:flex;gap:10px;margin-bottom:16px"></div>
 
-    <!-- Filter bar -->
-    <div style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:8px;margin-bottom:16px;align-items:center">
-      <div style="position:relative">
-        <input id="devSearch" type="text" placeholder="Search by name, serial, employee…"
-          style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 12px 8px 32px;font-family:var(--sans);font-size:13px;outline:none"
-          oninput="filterDevices()"/>
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:14px">🔍</span>
-      </div>
-      <select id="devStatusFilter" onchange="filterDevices()"
-        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none">
-        <option value="">All statuses</option>
-        <option value="ready_for_deployment">Ready</option>
-        <option value="deployed">Deployed</option>
-        <option value="disposed">Disposed</option>
-        <option value="in_transit">In Transit</option>
-        <option value="received_at_warehouse">At Warehouse</option>
-        <option value="box_delivered">Box Delivered</option>
-      </select>
-      <select id="devTypeFilter" onchange="filterDevices()"
-        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none">
-        <option value="">All types</option>
-        <option value="laptop">Laptop</option>
-        <option value="monitor">Monitor</option>
-        <option value="phone">Phone</option>
-      </select>
-      <input id="devDateFrom" type="date" onchange="filterDevices()" title="From date"
-        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none"/>
-      <input id="devDateTo" type="date" onchange="filterDevices()" title="To date"
-        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:12px;outline:none"/>
-    </div>
-
-    <!-- Three panels -->
+    <!-- Three panels with individual filters -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+
       <!-- Warehouse -->
       <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-          <div style="font-size:13px;font-weight:700">Warehouse Inventory</div>
-          <div style="font-size:11px;color:var(--ink-dim)" id="warehouseCount">—</div>
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700">Warehouse Inventory</div>
+            <div style="font-size:11px;color:var(--ink-dim)" id="warehouseCount">—</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="position:relative">
+              <input id="wh-search" type="text" placeholder="Search name, serial…"
+                style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:6px 10px 6px 28px;font-family:var(--sans);font-size:12px;outline:none"
+                oninput="filterDevices()"/>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <select id="wh-status" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All statuses</option>
+                <option value="ready_for_deployment">Ready</option>
+                <option value="deployed">Deployed</option>
+                <option value="disposed">Disposed</option>
+              </select>
+              <select id="wh-type" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All types</option>
+                <option value="macbook">MacBook</option>
+                <option value="thinkpad">ThinkPad</option>
+                <option value="dell">Dell</option>
+                <option value="laptop">Laptop</option>
+                <option value="monitor">Monitor</option>
+              </select>
+            </div>
+          </div>
         </div>
-        <div id="warehouseList" style="padding:8px;overflow-y:auto;flex:1;max-height:520px">
+        <div id="warehouseList" style="padding:8px;overflow-y:auto;flex:1;max-height:480px">
           <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
         </div>
       </div>
 
       <!-- Active Returns -->
       <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-          <div style="font-size:13px;font-weight:700">Active Returns</div>
-          <div style="font-size:11px;color:var(--ink-dim)" id="returnsCount">—</div>
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700">Active Returns</div>
+            <div style="font-size:11px;color:var(--ink-dim)" id="returnsCount">—</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="position:relative">
+              <input id="ret-search" type="text" placeholder="Search employee, city…"
+                style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:6px 10px 6px 28px;font-family:var(--sans);font-size:12px;outline:none"
+                oninput="filterDevices()"/>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <select id="ret-status-filter" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All statuses</option>
+                <option value="box_delivered">Box Delivered</option>
+                <option value="return_in_transit">In Transit</option>
+                <option value="received_at_warehouse">Received</option>
+              </select>
+              <input id="ret-date-from" type="date" onchange="filterDevices()" title="From date"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none"/>
+            </div>
+          </div>
         </div>
-        <div id="returnsList" style="padding:8px;overflow-y:auto;flex:1;max-height:520px">
+        <div id="returnsList" style="padding:8px;overflow-y:auto;flex:1;max-height:480px">
           <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
         </div>
       </div>
 
       <!-- Active Deployments -->
       <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-          <div style="font-size:13px;font-weight:700">Active Deployments</div>
-          <div style="font-size:11px;color:var(--ink-dim)" id="deploymentsCount">—</div>
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700">Active Deployments</div>
+            <div style="font-size:11px;color:var(--ink-dim)" id="deploymentsCount">—</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="position:relative">
+              <input id="dep-search-filter" type="text" placeholder="Search employee, city…"
+                style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:6px 10px 6px 28px;font-family:var(--sans);font-size:12px;outline:none"
+                oninput="filterDevices()"/>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <select id="dep-status-filter" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All statuses</option>
+                <option value="awaiting_shipment">Awaiting Shipment</option>
+                <option value="in_transit">In Transit</option>
+                <option value="delivered">Delivered</option>
+              </select>
+              <input id="dep-date-from" type="date" onchange="filterDevices()" title="From date"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none"/>
+            </div>
+          </div>
         </div>
-        <div id="deploymentsList" style="padding:8px;overflow-y:auto;flex:1;max-height:520px">
+        <div id="deploymentsList" style="padding:8px;overflow-y:auto;flex:1;max-height:480px">
           <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
         </div>
       </div>
+
     </div>
   </div>
 
@@ -3199,9 +3240,9 @@ function renderDevicesTab(data) {
 
 function renderWarehouse(items) {
   const wl = document.getElementById("warehouseList");
-  const query = document.getElementById("devSearch")?.value?.toLowerCase() || "";
-  const statusF = document.getElementById("devStatusFilter")?.value || "";
-  const typeF = document.getElementById("devTypeFilter")?.value || "";
+  const query = document.getElementById("wh-search")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("wh-status")?.value || "";
+  const typeF = document.getElementById("wh-type")?.value?.toLowerCase() || "";
 
   let filtered = items.filter(d => {
     const name = deviceName(d).toLowerCase();
@@ -3254,10 +3295,10 @@ function renderWarehouse(items) {
 
 function renderReturns(items) {
   const rl = document.getElementById("returnsList");
-  const query = document.getElementById("devSearch")?.value?.toLowerCase() || "";
-  const statusF = document.getElementById("devStatusFilter")?.value || "";
-  const dateFrom = document.getElementById("devDateFrom")?.value || "";
-  const dateTo = document.getElementById("devDateTo")?.value || "";
+  const query = document.getElementById("ret-search")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("ret-status-filter")?.value || "";
+  const dateFrom = document.getElementById("ret-date-from")?.value || "";
+  const dateTo = "";
 
   let filtered = items.filter(r => {
     const name = (r.employee_info?.name || "").toLowerCase();
@@ -3301,10 +3342,10 @@ function renderReturns(items) {
 
 function renderDeployments(items) {
   const dl = document.getElementById("deploymentsList");
-  const query = document.getElementById("devSearch")?.value?.toLowerCase() || "";
-  const statusF = document.getElementById("devStatusFilter")?.value || "";
-  const dateFrom = document.getElementById("devDateFrom")?.value || "";
-  const dateTo = document.getElementById("devDateTo")?.value || "";
+  const query = document.getElementById("dep-search-filter")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("dep-status-filter")?.value || "";
+  const dateFrom = document.getElementById("dep-date-from")?.value || "";
+  const dateTo = "";
 
   let filtered = items.filter(d => {
     const name = (d.employee_info?.name || "").toLowerCase();
