@@ -75,8 +75,8 @@ async function fsReplyToTicket(id, body) {
 }
 
 async function fsGetClosedTickets(limit = 200) {
-  const data = await fsRequest(`/tickets?filter=resolved&per_page=${Math.min(limit, 100)}`);
-  return (data.tickets || []).slice(0, limit);
+  const data = await fsRequest(`/tickets?per_page=${Math.min(limit, 100)}&order_type=desc&order_by=updated_at`);
+  return (data.tickets || []).filter(t => t.status === 4 || t.status === 5).slice(0, limit);
 }
 
 async function fsGetAgents() {
