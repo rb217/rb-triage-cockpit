@@ -1,77 +1,56 @@
 // api/shared/graph.js
-// Microsoft Graph API client with both app-only and delegated token support.
-// App tokens cached per Function instance and refreshed before expiry.
+// Microsoft Graph API client — uses raw OAuth2 client credentials (no @azure/identity SDK)
 
-const { ClientSecretCredential, OnBehalfOfCredential } = require("@azure/identity");
 const { getSecret } = require("./clients");
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-// ============================================================
-// TOKEN CACHE (per Function instance)
-// ============================================================
+// Token cache per Function instance
 let _appTokenCache = null;
 let _appTokenExpiry = 0;
-let _appCredential = null;
-
-async function getAppCredential() {
-  if (_appCredential) return _appCredential;
-  const tenantId = process.env.AAD_TENANT_ID;
-  const clientId = process.env.AAD_GRAPH_CLIENT_ID; // separate registration for Graph
-  const clientSecret = await getSecret(process.env.AAD_GRAPH_CLIENT_SECRET_SETTING || "AAD-GRAPH-CLIENT-SECRET");
-  _appCredential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-  return _appCredential;
-}
 
 async function getAppToken() {
   const now = Date.now();
-  // Refresh if expiring within 5 minutes
   if (_appTokenCache && (_appTokenExpiry - now) > 5 * 60 * 1000) {
     return _appTokenCache;
   }
-  const credential = await getAppCredential();
-  const result = await credential.getToken("https://graph.microsoft.com/.default");
-  _appTokenCache = result.token;
-  _appTokenExpiry = result.expiresOnTimestamp;
+  const tenantId = process.env.AAD_TENANT_ID;
+  const clientId = process.env.AAD_GRAPH_CLIENT_ID;
+  const clientSecret = await getSecret("AAD-GRAPH-CLIENT-SECRET");
+
+  const res = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope: "https://graph.microsoft.com/.default"
+    })
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Graph token error: ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  _appTokenCache = data.access_token;
+  _appTokenExpiry = now + (data.expires_in * 1000);
   return _appTokenCache;
 }
 
-// ============================================================
-// DELEGATED (on-behalf-of) — for user-initiated actions
-// ============================================================
-async function getDelegatedToken(userAssertion) {
-  // userAssertion is the access token SWA passes in x-ms-token-aad-access-token header
-  if (!userAssertion) throw new Error("No user token provided for delegated call");
-  const tenantId = process.env.AAD_TENANT_ID;
-  const clientId = process.env.AAD_GRAPH_CLIENT_ID;
-  const clientSecret = await getSecret(process.env.AAD_GRAPH_CLIENT_SECRET_SETTING || "AAD-GRAPH-CLIENT-SECRET");
-  const credential = new OnBehalfOfCredential({
-    tenantId, clientId, clientSecret, userAssertionToken: userAssertion
-  });
-  const result = await credential.getToken("https://graph.microsoft.com/.default");
-  return result.token;
-}
-
-// ============================================================
-// GRAPH REQUEST
-// ============================================================
-async function graphRequest(path, { method = "GET", body, mode = "app", userToken } = {}) {
-  const token = mode === "delegated"
-    ? await getDelegatedToken(userToken)
-    : await getAppToken();
-
+async function graphRequest(path, { method = "GET", body } = {}) {
+  const token = await getAppToken();
   const url = path.startsWith("http") ? path : `${GRAPH_BASE}${path}`;
   const res = await fetch(url, {
     method,
     headers: {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
-      "ConsistencyLevel": "eventual" // required for some advanced queries
+      "ConsistencyLevel": "eventual"
     },
     body: body ? JSON.stringify(body) : undefined
   });
-
-  if (res.status === 204) return null; // no content
+  if (res.status === 204) return null;
   const text = await res.text();
   if (!res.ok) {
     let detail = text;
@@ -83,17 +62,12 @@ async function graphRequest(path, { method = "GET", body, mode = "app", userToke
   return text ? JSON.parse(text) : null;
 }
 
-// ============================================================
-// USER CONTEXT
-// ============================================================
 async function getUserByEmail(email) {
-  // Try email first, then UPN
   const q = encodeURIComponent(email);
   try {
     return await graphRequest(`/users/${q}?$select=id,displayName,givenName,surname,mail,userPrincipalName,jobTitle,department,officeLocation,accountEnabled,onPremisesSyncEnabled,createdDateTime`);
   } catch (e) {
     if (e.status === 404) {
-      // Try search by mail
       const result = await graphRequest(`/users?$filter=mail eq '${email}' or otherMails/any(m:m eq '${email}')&$select=id,displayName,mail,userPrincipalName`);
       return result.value?.[0] || null;
     }
@@ -120,7 +94,6 @@ async function getUserLicenses(userId) {
 }
 
 async function getUserGroups(userId) {
-  // Use transitive memberOf to catch nested groups
   const result = await graphRequest(`/users/${userId}/transitiveMemberOf?$select=displayName,mailEnabled,securityEnabled&$top=50`);
   return (result.value || [])
     .filter(g => g["@odata.type"] === "#microsoft.graph.group")
@@ -131,13 +104,10 @@ async function getUserGroups(userId) {
 }
 
 async function getUserSignInActivity(userId) {
-  // Requires AuditLog.Read.All
   try {
     const user = await graphRequest(`/users/${userId}?$select=signInActivity`);
     return user.signInActivity || null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 async function getUserRiskySignIns(userId, days = 7) {
@@ -147,18 +117,23 @@ async function getUserRiskySignIns(userId, days = 7) {
       `/auditLogs/signIns?$filter=userId eq '${userId}' and createdDateTime ge ${since} and riskLevelDuringSignIn ne 'none'&$top=10&$select=createdDateTime,ipAddress,location,riskLevelDuringSignIn,riskState,status`
     );
     return result.value || [];
-  } catch (e) {
-    return [];
-  }
+  } catch (e) { return []; }
+}
+
+async function getUserSignInLogs(userId, count = 10) {
+  try {
+    const result = await graphRequest(
+      `/auditLogs/signIns?$filter=userId eq '${userId}'&$top=${count}&$orderby=createdDateTime desc&$select=createdDateTime,appDisplayName,ipAddress,location,status,riskLevelDuringSignIn,clientAppUsed,deviceDetail`
+    );
+    return result.value || [];
+  } catch (e) { return []; }
 }
 
 async function getUserDevices(userId) {
   try {
     const result = await graphRequest(`/users/${userId}/registeredDevices?$select=displayName,operatingSystem,operatingSystemVersion,isCompliant,trustType,approximateLastSignInDateTime`);
-    return (result.value || []).slice(0, 5);
-  } catch (e) {
-    return [];
-  }
+    return (result.value || []).slice(0, 8);
+  } catch (e) { return []; }
 }
 
 async function getUserMfaStatus(userId) {
@@ -176,25 +151,29 @@ async function getUserMfaStatus(userId) {
       strongAuthCount: passwordless.length,
       methods: methods.map(m => (m["@odata.type"] || "").replace("#microsoft.graph.", "").replace("AuthenticationMethod", ""))
     };
-  } catch (e) {
-    return { enrolled: null, error: e.message };
-  }
+  } catch (e) { return { enrolled: null, error: e.message }; }
 }
 
-// Combined context fetch — used by /api/m365Context
+async function getConditionalAccessPolicies() {
+  try {
+    const result = await graphRequest(`/identity/conditionalAccess/policies?$select=displayName,state,conditions,grantControls`);
+    return (result.value || []).filter(p => p.state === "enabled");
+  } catch (e) { return []; }
+}
+
 async function getFullUserContext(email) {
   const user = await getUserByEmail(email);
   if (!user) return { found: false };
 
-  // Fetch in parallel
-  const [manager, licenses, groups, signIn, risky, devices, mfa] = await Promise.allSettled([
+  const [manager, licenses, groups, signIn, risky, devices, mfa, signInLogs] = await Promise.allSettled([
     getUserManager(user.id),
     getUserLicenses(user.id),
     getUserGroups(user.id),
     getUserSignInActivity(user.id),
     getUserRiskySignIns(user.id, 7),
     getUserDevices(user.id),
-    getUserMfaStatus(user.id)
+    getUserMfaStatus(user.id),
+    getUserSignInLogs(user.id, 5)
   ]);
 
   const unwrap = (r, fallback = null) => r.status === "fulfilled" ? r.value : fallback;
@@ -217,7 +196,8 @@ async function getFullUserContext(email) {
     signInActivity: unwrap(signIn),
     riskySignIns: unwrap(risky, []),
     devices: unwrap(devices, []),
-    mfa: unwrap(mfa, { enrolled: null })
+    mfa: unwrap(mfa, { enrolled: null }),
+    recentSignIns: unwrap(signInLogs, [])
   };
 }
 
@@ -245,14 +225,9 @@ async function createUser({ firstName, lastName, upn, displayName, jobTitle, dep
     jobTitle,
     department,
     usageLocation: "US",
-    passwordProfile: {
-      forceChangePasswordNextSignIn: true,
-      password: initialPassword
-    }
+    passwordProfile: { forceChangePasswordNextSignIn: true, password: initialPassword }
   };
   const created = await graphRequest("/users", { method: "POST", body });
-
-  // Assign manager if provided
   if (managerEmail) {
     try {
       const manager = await getUserByEmail(managerEmail);
@@ -262,10 +237,7 @@ async function createUser({ firstName, lastName, upn, displayName, jobTitle, dep
           body: { "@odata.id": `https://graph.microsoft.com/v1.0/users/${manager.id}` }
         });
       }
-    } catch (e) {
-      // Don't fail user creation just because manager assignment failed
-      console.warn("Could not assign manager:", e.message);
-    }
+    } catch (e) { console.warn("Manager assign failed:", e.message); }
   }
   return created;
 }
@@ -273,10 +245,7 @@ async function createUser({ firstName, lastName, upn, displayName, jobTitle, dep
 async function assignLicense(userId, skuId) {
   return graphRequest(`/users/${userId}/assignLicense`, {
     method: "POST",
-    body: {
-      addLicenses: [{ skuId, disabledPlans: [] }],
-      removeLicenses: []
-    }
+    body: { addLicenses: [{ skuId, disabledPlans: [] }], removeLicenses: [] }
   });
 }
 
@@ -302,10 +271,7 @@ async function findGroupByName(name) {
 }
 
 async function disableUser(userId) {
-  return graphRequest(`/users/${userId}`, {
-    method: "PATCH",
-    body: { accountEnabled: false }
-  });
+  return graphRequest(`/users/${userId}`, { method: "PATCH", body: { accountEnabled: false } });
 }
 
 async function removeAllLicenses(userId) {
@@ -319,7 +285,6 @@ async function removeAllLicenses(userId) {
 }
 
 async function setMailForwarding(userId, forwardToEmail) {
-  // Sets mailbox forwarding via Exchange — requires Exchange.ManageAsApp + Mail.ReadWrite
   return graphRequest(`/users/${userId}/mailboxSettings`, {
     method: "PATCH",
     body: {
@@ -336,6 +301,8 @@ module.exports = {
   graphRequest,
   getUserByEmail,
   getFullUserContext,
+  getConditionalAccessPolicies,
+  getUserSignInLogs,
   checkUserAvailability,
   createUser,
   assignLicense,

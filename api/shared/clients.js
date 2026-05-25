@@ -1,20 +1,31 @@
-// api/shared/clients.js — reads secrets from env vars (no Key Vault)
+// api/shared/clients.js — v3 model compatible
 
+const { DefaultAzureCredential } = require("@azure/identity");
+const { SecretClient } = require("@azure/keyvault-secrets");
+
+const KV_NAME = process.env.KEY_VAULT_NAME;
 const FS_DOMAIN = process.env.FRESHSERVICE_DOMAIN;
 
-function getSecret(name) {
-  const envMap = {
-    "FRESHSERVICE-API-KEY": process.env.FRESHSERVICE_API_KEY,
-    "ANTHROPIC-API-KEY": process.env.ANTHROPIC_API_KEY,
-    "TEAMS-WEBHOOK-URL": process.env.TEAMS_WEBHOOK_URL,
-    "FRESHSERVICE-WEBHOOK-SECRET": process.env.FRESHSERVICE_WEBHOOK_SECRET,
-    "AUTO-REPLY-SETTINGS": process.env.AUTO_REPLY_SETTINGS
-  };
-  const value = envMap[name];
-  if (!value) throw new Error(`Secret not found: ${name}`);
-  return Promise.resolve(value);
+let _kvClient = null;
+const _secretCache = new Map();
+
+function getKvClient() {
+  if (!_kvClient) {
+    const credential = new DefaultAzureCredential();
+    _kvClient = new SecretClient(`https://${KV_NAME}.vault.azure.net`, credential);
+  }
+  return _kvClient;
 }
 
+async function getSecret(name) {
+  if (_secretCache.has(name)) return _secretCache.get(name);
+  const client = getKvClient();
+  const secret = await client.getSecret(name);
+  _secretCache.set(name, secret.value);
+  return secret.value;
+}
+
+// v3 model: req is the Azure Functions v3 request object (not a Web API Request)
 function getPrincipal(req) {
   const header = req.headers && (req.headers["x-ms-client-principal"] || req.headers.get?.("x-ms-client-principal"));
   if (!header) return null;
@@ -33,7 +44,7 @@ function isInItTeam(principal) {
 }
 
 async function fsRequest(path, options = {}) {
-  const apiKey = await getSecret("FRESHSERVICE-API-KEY");
+  const apiKey = await getSecret(process.env.FRESHSERVICE_API_KEY_SETTING || "FRESHSERVICE-API-KEY");
   const auth = Buffer.from(`${apiKey}:X`).toString("base64");
   const url = `https://${FS_DOMAIN}/api/v2${path}`;
   const res = await fetch(url, {
@@ -53,7 +64,8 @@ async function fsRequest(path, options = {}) {
 }
 
 async function fsGetAllOpenTickets() {
-  const data = await fsRequest(`/tickets?per_page=100`);
+  const q = encodeURIComponent('"status:2 OR status:3 OR status:6"');
+  const data = await fsRequest(`/tickets/filter?query=${q}&per_page=100`);
   return data.tickets || [];
 }
 
@@ -75,8 +87,9 @@ async function fsReplyToTicket(id, body) {
 }
 
 async function fsGetClosedTickets(limit = 200) {
-  const data = await fsRequest(`/tickets?per_page=${Math.min(limit, 100)}&order_type=desc&order_by=updated_at`);
-  return (data.tickets || []).filter(t => t.status === 4 || t.status === 5).slice(0, limit);
+  const q = encodeURIComponent('"status:4 OR status:5"');
+  const data = await fsRequest(`/tickets/filter?query=${q}&per_page=${Math.min(limit, 100)}`);
+  return (data.tickets || []).slice(0, limit);
 }
 
 async function fsGetAgents() {
@@ -115,7 +128,7 @@ async function fsGetAgentMap() {
 }
 
 async function callClaude(prompt, { maxTokens = 1000, model = "claude-sonnet-4-20250514" } = {}) {
-  const apiKey = await getSecret("ANTHROPIC-API-KEY");
+  const apiKey = await getSecret(process.env.ANTHROPIC_API_KEY_SETTING || "ANTHROPIC-API-KEY");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
@@ -132,7 +145,7 @@ function parseJsonResponse(text) {
 }
 
 async function postTeamsCard(card) {
-  const url = await getSecret("TEAMS-WEBHOOK-URL");
+  const url = await getSecret(process.env.TEAMS_WEBHOOK_URL_SETTING || "TEAMS-WEBHOOK-URL");
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(card) });
   if (!res.ok) { const text = await res.text(); throw new Error(`Teams ${res.status}: ${text.slice(0, 300)}`); }
   return true;
