@@ -1,1 +1,0 @@
-{"bindings":[{"authLevel":"anonymous","type":"httpTrigger","direction":"in","name":"req","methods":["post"],"route":"replyDraft"},{"type":"http","direction":"out","name":"res"}]}
