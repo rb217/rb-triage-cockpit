@@ -4577,7 +4577,7 @@ function getRunbooksForTicket(ticket) {
 }
 
 function renderRunbooksPanel(ticket) {
-  const suggested = getRunbooksForTicket(ticket);
+  const suggested = _runbooks.filter(r => r.categories.includes(ticket.category));
   if (!suggested.length) return "";
   return `
     <div class="detail-section">
@@ -4596,57 +4596,135 @@ function renderRunbooksPanel(ticket) {
 async function startRunbook(runbookId, ticketId) {
   const runbook = _runbooks.find(r => r.id === runbookId);
   if (!runbook) return;
-  // Pre-fill from ticket
-  const ticket = TICKETS.find(t => t.id === ticketId);
+
+  document.getElementById("runbookModalTitle").textContent = `${runbook.icon} ${runbook.name}`;
+  document.getElementById("runbookModalBody").innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim)"><span class="loader"></span> Preparing runbook…</div>`;
+  openModal("runbookModal");
+
+  // Pre-fill email from ticket via API
+  let prefillEmail = "";
+  try {
+    const res = await fetch(`/api/runbook?action=prefill&ticketId=${ticketId}`);
+    const data = await res.json();
+    prefillEmail = data.prefill?.email || "";
+  } catch(e) {}
+
   _currentRunbook = runbook;
   _runbookState = {
     ticketId,
     currentStep: 0,
-    params: {
-      email: ticket?.requester_email || ticket?.email || "",
-      subject: ticket?.subject || "",
-      description: ticket?.description_text || ""
-    },
+    params: { email: prefillEmail },
     results: []
   };
-  document.getElementById("runbookModalTitle").textContent = `${runbook.icon} ${runbook.name}`;
+
   renderRunbookStep();
-  openModal("runbookModal");
+
+  // Auto-execute the first auto step immediately
+  await autoAdvanceRunbook();
 }
 
-function renderRunbookStep() {
+async function autoAdvanceRunbook() {
+  const rb = _currentRunbook;
+  const state = _runbookState;
+  while (state.currentStep < rb.steps.length) {
+    const step = rb.steps[state.currentStep];
+    if (step.type !== "auto") break; // stop at confirm steps
+    await executeRunbookStep();
+  }
+}
+
+async function executeRunbookStep() {
+  const rb = _currentRunbook;
+  const state = _runbookState;
+  const stepIdx = state.currentStep;
+  const step = rb.steps[stepIdx];
+  if (!step) return;
+
+  // Collect params from any visible form fields
+  if (step.params) {
+    step.params.forEach(p => {
+      const el = document.getElementById(`rbParam_${p.key}`);
+      if (el) state.params[p.key] = el.value.trim();
+    });
+  }
+
+  // Merge data from previous results into params
+  state.results.forEach(r => { if (r?.data) Object.assign(state.params, r.data); });
+
+  renderRunbookStep(true); // show loading state
+
+  try {
+    const res = await fetch("/api/runbook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        runbookId: rb.id,
+        ticketId: state.ticketId,
+        stepId: step.id,
+        params: { ...state.params, steps: state.results }
+      })
+    });
+    const result = await res.json();
+    state.results[stepIdx] = result;
+    if (result.data) Object.assign(state.params, result.data);
+    state.currentStep++;
+    renderRunbookStep();
+
+    if (state.currentStep >= rb.steps.length) {
+      toast(`✓ Runbook complete: ${rb.name}`);
+      if (CURRENT_ID === state.ticketId) renderDetail();
+      return;
+    }
+
+    // Auto-advance through any subsequent auto steps
+    await autoAdvanceRunbook();
+  } catch(err) {
+    state.results[stepIdx] = { ok: false, message: err.message };
+    renderRunbookStep();
+  }
+}
+
+function renderRunbookStep(loading = false) {
   const rb = _currentRunbook;
   const state = _runbookState;
   const stepIdx = state.currentStep;
   const body = document.getElementById("runbookModalBody");
   const hint = document.getElementById("runbookModalHint");
   const nextBtn = document.getElementById("runbookNextBtn");
+  if (!body) return;
 
-  // Steps overview
+  const isComplete = stepIdx >= rb.steps.length;
+  const currentStep = rb.steps[stepIdx];
+
+  // Steps list
   const stepsHtml = rb.steps.map((s, i) => {
     const done = i < stepIdx;
-    const active = i === stepIdx;
+    const active = i === stepIdx && !isComplete;
     const result = state.results[i];
+    const isLoading = active && loading;
     return `
-      <div style="display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:start;padding:8px 10px;border-radius:var(--radius-sm);background:${active?"var(--accent-dim)":"transparent"};margin-bottom:4px">
-        <div style="width:24px;height:24px;border-radius:50%;background:${done?"var(--ok)":active?"var(--accent)":"var(--panel-2)"};color:${done||active?"#fff":"var(--ink-ghost)"};display:grid;place-items:center;font-size:10px;font-weight:800;flex-shrink:0">
-          ${done?"✓":i+1}
+      <div style="display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:start;
+        padding:8px 10px;border-radius:var(--radius-sm);
+        background:${active?"var(--accent-dim)":"transparent"};margin-bottom:3px">
+        <div style="width:26px;height:26px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:${done?"14px":"11px"};font-weight:800;
+          background:${done?"var(--ok)":active?"var(--accent)":"var(--panel-2)"};
+          color:${done||active?"#fff":"var(--ink-ghost)"}">
+          ${isLoading ? `<span class="loader" style="width:12px;height:12px;border-width:2px"></span>` : done ? "✓" : i+1}
         </div>
         <div>
-          <div style="font-size:13px;font-weight:${active?"700":"500"};color:${active?"var(--ink)":"var(--ink-dim)"}">${s.label}</div>
-          ${s.description && active ? `<div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${s.description}</div>` : ""}
-          ${result ? `<div style="font-size:11px;color:${result.ok?"var(--ok)":"var(--danger)"};margin-top:3px">${result.ok?"✓":"✗"} ${result.message}</div>` : ""}
+          <div style="font-size:13px;font-weight:${active?"700":"500"};color:${active?"var(--ink)":done?"var(--ink-dim)":"var(--ink-dim)"}">${s.label}</div>
+          ${s.description && active ? `<div style="font-size:11px;color:${s.description.startsWith("⚠")?"var(--warn)":"var(--ink-dim)"};margin-top:2px">${s.description}</div>` : ""}
+          ${result ? `<div style="font-size:11px;color:${result.ok?"var(--ok)":"var(--danger)"};margin-top:3px">${result.ok?"✓":"✗"} ${result.message||result.error||""}</div>` : ""}
         </div>
-        <div style="font-size:11px;color:var(--ink-ghost)">${s.type}</div>
+        <div style="font-size:10px;color:var(--ink-ghost);padding-top:3px">${s.type}</div>
       </div>
     `;
   }).join("");
 
-  // Current step params
-  const currentStep = rb.steps[stepIdx];
+  // Param form for current confirm step
   let paramsHtml = "";
-  if (currentStep && currentStep.params) {
-    paramsHtml = `<div style="margin-top:12px;padding:12px;background:var(--panel-2);border-radius:var(--radius-sm)">` +
+  if (!isComplete && currentStep?.params && currentStep.type === "confirm") {
+    paramsHtml = `<div style="margin-top:10px;padding:12px;background:var(--panel-2);border-radius:var(--radius-sm);border:1px solid var(--border)">` +
       currentStep.params.map(p => `
         <div style="margin-bottom:8px">
           <div style="font-size:11px;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${p.label}</div>
@@ -4654,60 +4732,41 @@ function renderRunbookStep() {
             ? `<select id="rbParam_${p.key}" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none">
                 ${(p.options||[]).map(o=>`<option>${o}</option>`).join("")}
               </select>`
-            : `<input type="text" id="rbParam_${p.key}" value="${state.params[p.key]||p.default||""}"
+            : `<input type="text" id="rbParam_${p.key}"
+                value="${state.params[p.key]||p.default||""}"
+                placeholder="${p.placeholder||""}"
                 style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none"/>`
           }
         </div>
       `).join("") + "</div>";
   }
 
-  const isLast = stepIdx >= rb.steps.length;
-  body.innerHTML = stepsHtml + paramsHtml;
-  hint.textContent = isLast ? "All steps complete" : `Step ${stepIdx+1} of ${rb.steps.length}: ${rb.steps[stepIdx]?.label || ""}`;
-  nextBtn.classList.toggle("hidden", isLast);
-  nextBtn.textContent = stepIdx < rb.steps.length - 1 ? "Execute step →" : "Complete ✓";
+  // Summary of pre-filled email
+  const emailPreview = state.params.email
+    ? `<div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--ink-dim)">👤 Acting on: <strong style="color:var(--ink)">${state.params.email}</strong></div>`
+    : "";
+
+  body.innerHTML = emailPreview + stepsHtml + paramsHtml;
+
+  if (isComplete) {
+    hint.textContent = "All steps completed successfully";
+    nextBtn?.classList.add("hidden");
+  } else if (currentStep?.type === "confirm") {
+    hint.textContent = `Step ${stepIdx+1} of ${rb.steps.length}: ${currentStep.label}`;
+    nextBtn?.classList.remove("hidden");
+    nextBtn && (nextBtn.textContent = stepIdx < rb.steps.length - 1 ? "Execute →" : "Complete ✓");
+    nextBtn && (nextBtn.disabled = false);
+  } else {
+    hint.textContent = loading ? "Executing…" : `Step ${stepIdx+1} of ${rb.steps.length}`;
+    nextBtn?.classList.add("hidden");
+  }
 }
 
 document.getElementById("runbookNextBtn")?.addEventListener("click", async () => {
-  const rb = _currentRunbook;
-  const state = _runbookState;
-  const stepIdx = state.currentStep;
-  const step = rb.steps[stepIdx];
-  if (!step) { closeModal("runbookModal"); return; }
-
-  // Collect params from form
-  if (step.params) {
-    step.params.forEach(p => {
-      const el = document.getElementById(`rbParam_${p.key}`);
-      if (el) state.params[p.key] = el.value;
-    });
-  }
-  // Carry forward data from previous steps
-  state.results.forEach(r => { if (r.data) Object.assign(state.params, r.data); });
-
   const btn = document.getElementById("runbookNextBtn");
-  btn.disabled = true; btn.textContent = "Running…";
-
-  try {
-    const res = await fetch("/api/runbook", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ runbookId: rb.id, ticketId: state.ticketId, stepId: step.id, params: { ...state.params, steps: state.results } })
-    });
-    const result = await res.json();
-    state.results[stepIdx] = result;
-    if (result.data) Object.assign(state.params, result.data);
-    state.currentStep++;
-    if (state.currentStep >= rb.steps.length) {
-      toast(`✓ Runbook complete: ${rb.name}`);
-      if (CURRENT_ID === state.ticketId) renderDetail();
-    }
-    renderRunbookStep();
-  } catch(err) {
-    state.results[stepIdx] = { ok: false, message: err.message };
-    renderRunbookStep();
-  }
-  btn.disabled = false;
+  btn.disabled = true;
+  btn.textContent = "Executing…";
+  await executeRunbookStep();
 });
 
 // Load runbooks on boot
