@@ -5,7 +5,6 @@ const { getSecret } = require("./clients");
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-// Token cache per Function instance
 let _appTokenCache = null;
 let _appTokenExpiry = 0;
 
@@ -154,13 +153,6 @@ async function getUserMfaStatus(userId) {
   } catch (e) { return { enrolled: null, error: e.message }; }
 }
 
-async function getConditionalAccessPolicies() {
-  try {
-    const result = await graphRequest(`/identity/conditionalAccess/policies?$select=displayName,state,conditions,grantControls`);
-    return (result.value || []).filter(p => p.state === "enabled");
-  } catch (e) { return []; }
-}
-
 async function getFullUserContext(email) {
   const user = await getUserByEmail(email);
   if (!user) return { found: false };
@@ -201,9 +193,6 @@ async function getFullUserContext(email) {
   };
 }
 
-// ============================================================
-// ONBOARDING / OFFBOARDING ACTIONS
-// ============================================================
 async function checkUserAvailability(upn) {
   try {
     await graphRequest(`/users/${encodeURIComponent(upn)}?$select=id`);
@@ -301,7 +290,6 @@ module.exports = {
   graphRequest,
   getUserByEmail,
   getFullUserContext,
-  getConditionalAccessPolicies,
   getUserSignInLogs,
   checkUserAvailability,
   createUser,
