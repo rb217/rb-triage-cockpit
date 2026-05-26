@@ -4954,6 +4954,11 @@ async function loadRunbooks() {
     const data = await res.json();
     _runbooks = data.runbooks || [];
   } catch(e) {}
+  // Merge in MDM runbooks
+  if (typeof MDM_RUNBOOKS !== 'undefined') {
+    const existingIds = new Set(_runbooks.map(r => r.id));
+    MDM_RUNBOOKS.forEach(r => { if (!existingIds.has(r.id)) _runbooks.push(r); });
+  }
 }
 
 function getRunbooksForTicket(ticket) {
@@ -5671,13 +5676,7 @@ async function executeMdmRunbookStep(stepId, params, ticketId) {
   }
 }
 
-// Hook MDM runbooks into loadRunbooks
-const _origLoadRunbooks = loadRunbooks;
-async function loadRunbooks() {
-  await _origLoadRunbooks();
-  _runbooks = [...(_runbooks || []), ...MDM_RUNBOOKS];
-}
-
+// MDM runbooks are merged in via loadRunbooks override below
 // Mac Fleet tab mode switch
 document.querySelector('[data-mode="fleet"]')?.addEventListener("click", () => {
   if (!_fleetData) loadFleet();
