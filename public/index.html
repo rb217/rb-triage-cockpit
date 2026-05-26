@@ -1077,49 +1077,47 @@
 
 <!-- MAC FLEET VIEW -->
 <div class="hidden" id="mainFleet" style="overflow-y:auto;padding:20px 24px">
+
+  <!-- Header -->
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
     <div>
       <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">🍎 Mac Fleet</h2>
       <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Kandji/Iru MDM · device compliance · security posture</div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn ghost" id="refreshFleetBtn">⟳ Refresh</button>
-    </div>
+    <button class="btn ghost" id="refreshFleetBtn">⟳ Refresh</button>
   </div>
 
   <!-- Compliance summary strip -->
   <div id="fleetSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px"></div>
 
-  <!-- OS version distribution -->
-  <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;margin-bottom:16px;align-items:start">
-    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:10px">macOS Version Distribution</div>
-      <div id="fleetOsChart"></div>
+  <!-- Filter bar -->
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+    <div style="position:relative;flex:1;min-width:200px">
+      <input id="fleetSearch" type="text" placeholder="Search name, serial, user…"
+        style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 12px 7px 30px;font-family:var(--sans);font-size:13px;outline:none;box-sizing:border-box"
+        oninput="_fleetPage=0;renderFleetList()"/>
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
     </div>
-    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:10px">Quick Actions</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <button class="btn" style="justify-content:start;gap:8px;font-size:12px" onclick="filterFleetDevices('stale')">📵 Show stale devices (5+ days)</button>
-        <button class="btn" style="justify-content:start;gap:8px;font-size:12px" onclick="filterFleetDevices('filevault')">🔓 FileVault disabled</button>
-        <button class="btn" style="justify-content:start;gap:8px;font-size:12px" onclick="filterFleetDevices('issues')">⚠️ Non-compliant only</button>
-        <button class="btn" style="justify-content:start;gap:8px;font-size:12px" onclick="filterFleetDevices('all')">📋 Show all devices</button>
-      </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="fleet-filter-btn active" data-filter="all" onclick="setFleetFilter('all',this)">All</button>
+      <button class="fleet-filter-btn" data-filter="mac" onclick="setFleetFilter('mac',this)">Macs only</button>
+      <button class="fleet-filter-btn" data-filter="issues" onclick="setFleetFilter('issues',this)">⚠ Issues</button>
+      <button class="fleet-filter-btn" data-filter="filevault" onclick="setFleetFilter('filevault',this)">🔓 FileVault off</button>
+      <button class="fleet-filter-btn" data-filter="stale" onclick="setFleetFilter('stale',this)">📵 Stale 5d+</button>
+      <button class="fleet-filter-btn" data-filter="offline" onclick="setFleetFilter('offline',this)">🔴 Offline</button>
     </div>
+    <div id="fleetCount" style="font-size:12px;color:var(--ink-dim);white-space:nowrap"></div>
   </div>
 
-  <!-- Search + device list -->
-  <div style="position:relative;margin-bottom:12px">
-    <input id="fleetSearch" type="text" placeholder="Search by name, serial, user…"
-      style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 12px 8px 32px;font-family:var(--sans);font-size:13px;outline:none"
-      oninput="renderFleetList()"/>
-    <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:14px">🔍</span>
-  </div>
-
-  <div id="fleetGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px">
+  <!-- Device grid — larger cards, 2 per row -->
+  <div id="fleetGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:12px">
     <div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">
       <div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…
     </div>
   </div>
+
+  <!-- Pagination -->
+  <div id="fleetPagination" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px;padding-bottom:20px"></div>
 </div>
 
 <!-- MAC DEVICE DETAIL MODAL -->
@@ -5165,9 +5163,195 @@ loadRunbooks();
 // ============================================================
 let _fleetData = null;
 let _fleetFilter = "all";
+let _fleetPage = 0;
+const FLEET_PAGE_SIZE = 12;
 let _currentMacDevice = null;
 
+// Add fleet filter button styles
+(function(){
+  const s = document.createElement('style');
+  s.textContent = `.fleet-filter-btn{background:var(--panel);border:1px solid var(--border);border-radius:20px;color:var(--ink-dim);padding:5px 12px;font-size:12px;font-family:var(--sans);cursor:pointer;transition:.15s;white-space:nowrap}.fleet-filter-btn:hover{border-color:var(--border-hot);color:var(--ink)}.fleet-filter-btn.active{background:var(--accent-dim,rgba(99,102,241,.15));border-color:var(--accent);color:var(--accent)}`;
+  document.head.appendChild(s);
+})();
+
+function setFleetFilter(filter, btn) {
+  _fleetFilter = filter;
+  _fleetPage = 0;
+  document.querySelectorAll('.fleet-filter-btn').forEach(b => b.classList.remove('active'));
+  btn?.classList.add('active');
+  renderFleetList();
+}
+
 async function loadFleet() {
+  const grid = document.getElementById("fleetGrid");
+  if (!grid) return;
+  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…</div>`;
+  document.getElementById("fleetSummaryStrip").innerHTML = "";
+  document.getElementById("fleetPagination").innerHTML = "";
+  try {
+    const res = await fetch("/api/kandji?action=fleet");
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    _fleetData = await res.json();
+    renderFleetSummary(_fleetData.summary);
+    renderFleetList();
+  } catch(err) {
+    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load Mac fleet: ${err.message}<br><span style="color:var(--ink-dim);font-size:11px;margin-top:6px;display:block">Check KANDJI_API_KEY and KANDJI_SUBDOMAIN in environment variables</span></div>`;
+  }
+
+function renderFleetSummary(s) {
+  const strip = document.getElementById("fleetSummaryStrip");
+  if (!strip || !s) return;
+  // Only count Macs for stats
+  const macs = (_fleetData?.devices||[]).filter(d => isMac(d));
+  const macTotal = macs.length;
+  const filevaultOk = macs.filter(d => d.filevault_enabled).length;
+  const checkedIn = macs.filter(d => (d._compliance?.daysSinceCheckIn||999) <= 7).length;
+  const missing = macs.filter(d => d.is_missing).length;
+
+  strip.innerHTML = [
+    { label: "Total Macs", val: macTotal, color: "var(--accent)", sub: `${s.total} total devices` },
+    { label: "FileVault", val: macTotal ? Math.round(filevaultOk/macTotal*100)+"%" : "—", color: filevaultOk===macTotal?"var(--ok)":"var(--danger)", sub: `${filevaultOk}/${macTotal} encrypted` },
+    { label: "Checked In", val: macTotal ? Math.round(checkedIn/macTotal*100)+"%" : "—", color: checkedIn/macTotal>=.8?"var(--ok)":"var(--warn)", sub: "within 7 days" },
+    { label: "Stale/Missing", val: missing, color: missing>0?"var(--danger)":"var(--ok)", sub: "offline / not checking in" },
+    { label: "Proactive", val: "Active", color: "var(--accent)", sub: "scanning every 30min" },
+  ].map(item => `
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
+      <div style="font-size:24px;font-weight:800;color:${item.color};letter-spacing:-1px;line-height:1">${item.val}</div>
+      <div style="font-size:10px;color:var(--ink-ghost);margin-top:2px">${item.sub}</div>
+    </div>
+  `).join("");
+}
+
+function isMac(d) {
+  const model = (d.model||"").toLowerCase();
+  const name = (d.device_name||"").toLowerCase();
+  return model.includes("mac") || name.includes("mac") || (!model.includes("ipad") && !model.includes("iphone") && !name.includes("ipad") && !name.includes("iphone"));
+}
+
+function renderFleetList() {
+  const grid = document.getElementById("fleetGrid");
+  const pagination = document.getElementById("fleetPagination");
+  const countEl = document.getElementById("fleetCount");
+  if (!grid || !_fleetData) return;
+
+  const query = document.getElementById("fleetSearch")?.value?.toLowerCase() || "";
+  let devices = _fleetData.devices || [];
+
+  // Apply filters
+  if (_fleetFilter === "mac") devices = devices.filter(isMac);
+  else if (_fleetFilter === "stale") devices = devices.filter(d => (d._compliance?.daysSinceCheckIn||999) >= 5);
+  else if (_fleetFilter === "filevault") devices = devices.filter(d => !d.filevault_enabled);
+  else if (_fleetFilter === "issues") devices = devices.filter(d => !d._compliance?.compliant);
+  else if (_fleetFilter === "offline") devices = devices.filter(d => d.is_missing);
+
+  // Search
+  if (query) {
+    devices = devices.filter(d =>
+      (d.device_name||"").toLowerCase().includes(query) ||
+      (d.serial_number||"").toLowerCase().includes(query) ||
+      (d.user?.name||"").toLowerCase().includes(query) ||
+      (d.user?.email||"").toLowerCase().includes(query) ||
+      (d.model||"").toLowerCase().includes(query)
+    );
+  }
+
+  const total = devices.length;
+  const totalPages = Math.ceil(total / FLEET_PAGE_SIZE);
+  _fleetPage = Math.min(_fleetPage, Math.max(0, totalPages - 1));
+  const start = _fleetPage * FLEET_PAGE_SIZE;
+  const pageDevices = devices.slice(start, start + FLEET_PAGE_SIZE);
+
+  if (countEl) countEl.textContent = `${total} device${total!==1?"s":""}`;
+
+  if (!pageDevices.length) {
+    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No devices match filters</div>`;
+    pagination.innerHTML = "";
+    return;
+  }
+
+  grid.innerHTML = pageDevices.map(d => {
+    const c = d._compliance || {};
+    const mac = isMac(d);
+    const borderColor = d.is_missing ? "var(--danger)" : !c.compliant ? "var(--warn)" : "var(--border)";
+    const days = c.daysSinceCheckIn;
+    const daysLabel = days === null ? "never" : days === 0 ? "today" : `${days}d ago`;
+    const statusBadge = d.is_missing
+      ? `<span style="background:var(--danger-dim);color:var(--danger);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">OFFLINE</span>`
+      : !c.compliant
+      ? `<span style="background:var(--warn-dim);color:var(--warn);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">ISSUES</span>`
+      : `<span style="background:var(--ok-dim);color:var(--ok);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">✓ OK</span>`;
+
+    return `
+      <div onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})"
+        style="background:var(--panel);border:1px solid ${borderColor};border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:10px"
+        onmouseover="this.style.borderColor='${d.is_missing?"var(--danger)":!c.compliant?"var(--warn)":"var(--border-hot)"}'"
+        onmouseout="this.style.borderColor='${borderColor}'">
+
+        <!-- Top row: name + badge -->
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:2px">${d.device_name||"Unknown Device"}</div>
+            <div style="font-size:12px;color:var(--ink-dim)">${d.model||"Unknown model"}</div>
+          </div>
+          ${statusBadge}
+        </div>
+
+        <!-- User -->
+        ${d.user ? `
+        <div style="display:flex;align-items:center;gap:8px;background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim,rgba(99,102,241,.2));display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">👤</div>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--ink)">${d.user.name||""}</div>
+            <div style="font-size:11px;color:var(--ink-dim)">${d.user.email||""}</div>
+          </div>
+        </div>` : `<div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px;font-size:12px;color:var(--ink-ghost)">No user assigned</div>`}
+
+        <!-- Stats row -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">macOS</div>
+            <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.os_version||"—"}</div>
+          </div>
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">Check-in</div>
+            <div style="font-size:12px;font-weight:600;color:${days>=5?"var(--warn)":"var(--ink)"}">${daysLabel}</div>
+          </div>
+          <div style="background:${d.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">FileVault</div>
+            <div style="font-size:12px;font-weight:600;color:${d.filevault_enabled?"var(--ok)":"var(--danger)"}">${d.filevault_enabled?"ON":"OFF"}</div>
+          </div>
+        </div>
+
+        <!-- Issues -->
+        ${c.issues?.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${c.issues.map(i=>`<span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--warn-dim);color:var(--warn)">⚠ ${i}</span>`).join("")}</div>` : ""}
+
+        <!-- Actions -->
+        <div style="display:flex;gap:6px;margin-top:2px" onclick="event.stopPropagation()">
+          <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:5px" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳ Check-in</button>
+          <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:5px" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">📋 Details</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Pagination
+  if (totalPages > 1) {
+    pagination.innerHTML = `
+      <button class="btn ghost" style="font-size:12px;padding:5px 10px" ${_fleetPage===0?"disabled":""} onclick="_fleetPage--;renderFleetList()">← Prev</button>
+      <span style="font-size:12px;color:var(--ink-dim)">Page ${_fleetPage+1} of ${totalPages}</span>
+      <button class="btn ghost" style="font-size:12px;padding:5px 10px" ${_fleetPage>=totalPages-1?"disabled":""} onclick="_fleetPage++;renderFleetList()">Next →</button>
+    `;
+  } else {
+    pagination.innerHTML = "";
+  }
+}
+
+function filterFleetDevices(filter) {
+  _fleetFilter = filter;
+  _fleetPage = 0;
+  renderFleetList();
+}
   const grid = document.getElementById("fleetGrid");
   if (!grid) return;
   grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…</div>`;
@@ -5213,74 +5397,6 @@ function renderFleetOsChart(osVersions) {
       <div style="font-size:11px;color:var(--ink-dim);min-width:40px;text-align:right">${o.count} (${o.pct}%)</div>
     </div>
   `).join("");
-}
-
-function filterFleetDevices(filter) {
-  _fleetFilter = filter;
-  renderFleetList();
-}
-
-function renderFleetList() {
-  const grid = document.getElementById("fleetGrid");
-  if (!grid || !_fleetData) return;
-  const query = document.getElementById("fleetSearch")?.value?.toLowerCase() || "";
-  let devices = _fleetData.devices || [];
-
-  if (query) {
-    devices = devices.filter(d =>
-      (d.device_name||"").toLowerCase().includes(query) ||
-      (d.serial_number||"").toLowerCase().includes(query) ||
-      (d.user?.name||"").toLowerCase().includes(query) ||
-      (d.user?.email||"").toLowerCase().includes(query)
-    );
-  }
-
-  if (_fleetFilter === "stale") devices = devices.filter(d => d._compliance?.daysSinceCheckIn >= 5);
-  else if (_fleetFilter === "filevault") devices = devices.filter(d => !d.filevault_enabled);
-  else if (_fleetFilter === "issues") devices = devices.filter(d => !d._compliance?.compliant);
-
-  if (!devices.length) {
-    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No devices match filters</div>`;
-    return;
-  }
-
-  grid.innerHTML = devices.map(d => {
-    const c = d._compliance || {};
-    const hasIssues = !c.compliant;
-    const borderColor = d.is_missing ? "var(--danger)" : hasIssues ? "var(--warn)" : "var(--border)";
-    const days = c.daysSinceCheckIn;
-    const daysLabel = days === null ? "never" : days === 0 ? "today" : `${days}d ago`;
-
-    return `
-      <div onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})"
-        style="background:var(--panel);border:1px solid ${borderColor};border-radius:var(--radius);padding:12px 14px;cursor:pointer;transition:.15s"
-        onmouseover="this.style.borderColor='${d.is_missing?"var(--danger)":hasIssues?"var(--warn)":"var(--border-hot)"}'"
-        onmouseout="this.style.borderColor='${borderColor}'">
-        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
-          <div>
-            <div style="font-size:13px;font-weight:700;color:var(--ink)">${d.device_name||"Unknown Mac"}</div>
-            <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${d.model||""} · ${d.os_version||""}</div>
-          </div>
-          ${d.is_missing
-            ? `<span style="background:var(--danger-dim);color:var(--danger);padding:2px 7px;border-radius:20px;font-size:9px;font-weight:700">OFFLINE</span>`
-            : hasIssues
-            ? `<span style="background:var(--warn-dim);color:var(--warn);padding:2px 7px;border-radius:20px;font-size:9px;font-weight:700">ISSUES</span>`
-            : `<span style="background:var(--ok-dim);color:var(--ok);padding:2px 7px;border-radius:20px;font-size:9px;font-weight:700">OK</span>`
-          }
-        </div>
-        ${d.user ? `<div style="font-size:11px;color:var(--info);margin-bottom:5px">👤 ${d.user.name||""} · ${d.user.email||""}</div>` : ""}
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-          <span style="font-size:10px;padding:2px 7px;border-radius:20px;background:${d.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};color:${d.filevault_enabled?"var(--ok)":"var(--danger)"}">
-            ${d.filevault_enabled?"🔒 FileVault ON":"🔓 FileVault OFF"}
-          </span>
-          <span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--panel-2);color:var(--ink-dim)">
-            ⟳ ${daysLabel}
-          </span>
-        </div>
-        ${c.issues?.length ? `<div style="font-size:10px;color:var(--warn)">${c.issues.slice(0,2).join(" · ")}</div>` : ""}
-      </div>
-    `;
-  }).join("");
 }
 
 async function showMacDeviceDetail(device) {
