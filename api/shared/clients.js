@@ -1,147 +1,5706 @@
-// api/shared/clients.js — reads secrets from env vars (no Key Vault)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RB.IT // Triage Cockpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Display:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d14; --panel:#0f1420; --panel-2:#141928;
+    --border:#1e2540; --border-hot:#2d3555;
+    --ink:#f0f2f7; --ink-dim:#8892a4; --ink-ghost:#3d4a6b;
+    --accent:#6366f1; --accent-dim:rgba(99,102,241,0.15);
+    --accent-2:#ff6b35;
+    --danger:#f87171; --danger-dim:rgba(248,113,113,0.12);
+    --warn:#fbbf24; --warn-dim:rgba(251,191,36,0.12);
+    --ok:#4ade80; --ok-dim:rgba(74,222,128,0.12);
+    --info:#60a5fa; --teams:#5b5fc7;
+    --sans:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --display:'Inter', sans-serif;
+    --mono:ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+    --radius:10px; --radius-sm:6px; --radius-lg:14px;
+    --shadow:0 1px 3px rgba(0,0,0,0.5);
+    --shadow-md:0 4px 16px rgba(0,0,0,0.5);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  .app{display:grid;grid-template-rows:56px 44px 1fr;height:100vh;position:relative;z-index:2}
 
-const FS_DOMAIN = process.env.FRESHSERVICE_DOMAIN;
+  /* ===== TOP BAR ===== */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 20px;
+    border-bottom:1px solid var(--border);
+    background:var(--panel);
+  }
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand-mark{
+    width:32px;height:32px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;
+    display:grid;place-items:center;font-weight:800;font-size:15px;
+    border-radius:var(--radius-sm);flex-shrink:0;
+    box-shadow:0 0 12px rgba(99,102,241,0.4);
+  }
+  .brand-title{font-family:var(--display);font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-0.2px}
+  .brand-title em{color:var(--ink-dim);font-style:normal;font-size:12px;font-weight:400;margin-left:6px}
+  .topbar-meta{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink-dim)}
+  .meta-item{display:flex;align-items:center;gap:5px}
+  .meta-item span{color:var(--ink);font-weight:500}
+  .live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
-function getSecret(name) {
-  const envMap = {
-    "FRESHSERVICE-API-KEY": process.env.FRESHSERVICE_API_KEY,
-    "ANTHROPIC-API-KEY": process.env.ANTHROPIC_API_KEY,
-    "TEAMS-WEBHOOK-URL": process.env.TEAMS_WEBHOOK_URL,
-    "FRESHSERVICE-WEBHOOK-SECRET": process.env.FRESHSERVICE_WEBHOOK_SECRET,
-    "AUTO-REPLY-SETTINGS": process.env.AUTO_REPLY_SETTINGS,
-    "AAD-GRAPH-CLIENT-SECRET": process.env.AAD_CLIENT_SECRET
-  };
-  const value = envMap[name];
-  if (!value) throw new Error(`Secret not found: ${name}`);
-  return Promise.resolve(value);
+  /* ===== MODE TABS ===== */
+  .modetabs{
+    display:flex;border-bottom:1px solid var(--border);
+    background:var(--panel);padding:0 20px;
+  }
+  .modetab{
+    background:transparent;border:none;color:var(--ink-dim);
+    font-family:var(--sans);font-size:13px;font-weight:500;
+    padding:0 16px;cursor:pointer;border-bottom:2px solid transparent;
+    display:flex;align-items:center;gap:6px;height:44px;
+    transition:color .15s;
+  }
+  .modetab:hover{color:var(--ink)}
+  .modetab.active{color:var(--accent);border-bottom-color:var(--accent);text-shadow:0 0 12px rgba(99,102,241,0.4)}
+  .modetab .badge{
+    background:var(--accent);color:#fff;font-size:10px;font-weight:700;
+    padding:1px 6px;border-radius:20px;letter-spacing:0;
+  }
+  .modetab.alert .badge{background:var(--danger)}
+
+  /* ===== MAIN GRID ===== */
+  .main{display:grid;grid-template-columns:240px 1fr 420px;overflow:hidden}
+
+  /* ===== SIDEBAR ===== */
+  .sidebar{
+    border-right:1px solid var(--border);overflow-y:auto;
+    padding:16px 12px;background:var(--panel);
+  }
+  .sb-section{margin-bottom:20px}
+  .sb-label{
+    font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;
+    color:var(--ink-ghost);margin-bottom:6px;padding:0 8px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .sb-label .count{color:var(--accent);font-weight:700}
+  .filter-btn{
+    width:100%;text-align:left;background:transparent;border:none;
+    color:var(--ink-dim);font-family:var(--sans);font-size:13px;font-weight:400;
+    padding:7px 10px;cursor:pointer;
+    display:flex;justify-content:space-between;align-items:center;
+    border-radius:var(--radius-sm);transition:all .12s;
+  }
+  .filter-btn:hover{color:var(--ink);background:var(--panel-2)}
+  .filter-btn.active{color:var(--ink);background:var(--accent-dim);font-weight:500}
+  .filter-btn .num{
+    font-size:11px;font-weight:600;
+    background:var(--panel-2);padding:1px 7px;border-radius:20px;color:var(--ink-dim);
+  }
+  .filter-btn.active .num{background:var(--accent);color:#fff}
+
+  .group-by{display:flex;gap:4px;margin-top:4px}
+  .group-by button{
+    flex:1;background:var(--panel-2);border:1px solid var(--border);
+    color:var(--ink-dim);font-family:var(--sans);font-size:11px;font-weight:500;
+    padding:5px;cursor:pointer;border-radius:var(--radius-sm);transition:.12s;
+  }
+  .group-by button:hover{color:var(--ink);border-color:var(--border-hot)}
+  .group-by button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  .view-item{
+    display:flex;align-items:center;gap:6px;padding:6px 10px;
+    border-radius:var(--radius-sm);cursor:pointer;font-size:13px;color:var(--ink-dim);
+    transition:.12s;
+  }
+  .view-item:hover{background:var(--panel-2);color:var(--ink)}
+  .view-item .vi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .view-item .vi-del{
+    background:none;border:none;color:var(--ink-ghost);cursor:pointer;
+    font-size:16px;padding:0 4px;opacity:0;transition:.12s;
+  }
+  .view-item:hover .vi-del{opacity:1}
+  .view-item .vi-del:hover{color:var(--danger)}
+  .save-view-btn{
+    width:100%;background:transparent;border:1px dashed var(--border-hot);
+    color:var(--ink-dim);font-family:var(--sans);font-size:12px;font-weight:500;
+    padding:6px;cursor:pointer;border-radius:var(--radius-sm);margin-top:6px;
+    transition:.12s;
+  }
+  .save-view-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+  /* ===== CENTER ===== */
+  .center{overflow:hidden;display:grid;grid-template-rows:56px 80px 1fr}
+  .toolbar{
+    padding:0 16px;border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;align-items:center;gap:12px;
+    background:var(--panel);
+  }
+  .search{flex:1;position:relative;max-width:400px}
+  .search input{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);
+    color:var(--ink);font-family:var(--sans);font-size:13px;
+    padding:8px 12px 8px 36px;border-radius:var(--radius);outline:none;
+    transition:.15s;
+  }
+  .search input::placeholder{color:var(--ink-ghost)}
+  .search input:focus{border-color:var(--accent);background:var(--panel)}
+  .search::before{
+    content:"⌕";position:absolute;left:11px;top:50%;transform:translateY(-50%);
+    color:var(--ink-dim);font-size:16px;pointer-events:none;
+  }
+  .toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+  .btn{
+    background:var(--panel-2);border:1px solid var(--border);color:var(--ink);
+    font-family:var(--sans);font-size:13px;font-weight:500;
+    padding:7px 14px;cursor:pointer;border-radius:var(--radius-sm);
+    transition:all .15s;display:inline-flex;align-items:center;gap:6px;
+    white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--border-hot);background:var(--panel)}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.primary:hover{background:#3d7de8;border-color:#3d7de8}
+  .btn.ghost{background:transparent;border-color:transparent}
+  .btn.ghost:hover{background:var(--panel-2);border-color:var(--border)}
+  .btn.danger{border-color:var(--danger);color:var(--danger)}
+  .btn.danger:hover{background:var(--danger-dim)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn .pill-sm{
+    background:rgba(255,255,255,0.15);color:#fff;
+    padding:1px 6px;border-radius:20px;font-size:11px;font-weight:600;margin-left:2px;
+  }
+  .btn:not(.primary) .pill-sm{background:var(--panel);color:var(--ink-dim)}
+
+  .stats-strip{
+    display:grid;grid-template-columns:repeat(5,1fr);
+    border-bottom:1px solid var(--border);background:var(--panel);
+  }
+  .stat{padding:10px 16px;border-right:1px solid var(--border);position:relative}
+  .stat:last-child{border-right:none}
+  .stat-label{
+    font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;
+    color:var(--ink-ghost);margin-bottom:3px;
+  }
+  .stat-value{font-size:32px;font-weight:800;line-height:1;letter-spacing:-1.5px;color:var(--ink)}
+  .stat-sub{font-size:11px;color:var(--ink-ghost);margin-top:2px}
+  .stat.alert .stat-value{color:var(--danger);text-shadow:0 0 20px rgba(248,113,113,0.3)}
+  .stat.warn .stat-value{color:var(--warn)}
+  .stat.ok .stat-value{color:var(--ok);text-shadow:0 0 20px rgba(74,222,128,0.3)}
+  .stat.alert{background:rgba(248,113,113,0.04)}
+
+  /* ===== TICKET LIST ===== */
+  .ticket-list{overflow-y:auto;padding:8px}
+  .group-header{
+    padding:8px 12px 4px;font-size:11px;font-weight:600;text-transform:uppercase;
+    letter-spacing:0.5px;color:var(--ink-ghost);
+    display:flex;align-items:center;gap:10px;
+    position:sticky;top:0;z-index:5;background:var(--bg);
+  }
+  .group-header .line{flex:1;height:1px;background:var(--border)}
+  .group-header .ghdr-count{color:var(--accent);font-weight:700}
+
+  .ticket{
+    padding:12px 14px;border:1px solid var(--border);
+    border-radius:var(--radius);margin-bottom:6px;
+    cursor:pointer;transition:all .12s;position:relative;
+    display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;
+    background:var(--panel);
+    animation:ticketIn .2s ease-out;
+  }
+  @keyframes ticketIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  .ticket:hover{border-color:var(--border-hot);background:var(--panel-2)}
+  .ticket.selected{border-color:var(--accent);background:var(--panel-2);
+    box-shadow:0 0 0 1px var(--accent-dim),0 0 12px rgba(99,102,241,0.1)}
+  .ticket.new-arrival{animation:newTicket .6s ease-out}
+  @keyframes newTicket{
+    0%{background:rgba(99,102,241,0.2);border-color:var(--accent)}
+    100%{background:var(--panel);border-color:var(--border)}
+  }
+  .ticket.new::after{
+    content:"NEW";position:absolute;top:10px;right:10px;
+    background:var(--ok);color:#000;font-size:9px;font-weight:700;
+    padding:2px 6px;border-radius:20px;letter-spacing:0.5px;
+  }
+  .ticket-check{
+    width:16px;height:16px;
+    border:2px solid var(--border-hot);background:transparent;
+    cursor:pointer;margin-top:2px;position:relative;border-radius:4px;
+    flex-shrink:0;
+  }
+  .ticket-check.checked{background:var(--accent);border-color:var(--accent)}
+  .ticket-check.checked::after{
+    content:"✓";position:absolute;inset:0;display:grid;place-items:center;
+    font-size:10px;color:#fff;font-weight:700;
+  }
+
+  .ticket-body{min-width:0}
+  .ticket-meta-row{
+    display:flex;gap:6px;align-items:center;font-size:11px;
+    color:var(--ink-dim);margin-bottom:5px;flex-wrap:wrap;
+  }
+  .ticket-id{color:var(--ink-ghost);font-weight:600;font-size:12px;font-family:var(--sans)}
+  .pill{
+    padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;
+    letter-spacing:0.2px;
+  }
+  .pill.urgent{background:var(--danger-dim);color:var(--danger)}
+  .pill.high{background:rgba(255,107,53,0.15);color:#ff6b35}
+  .pill.medium{background:var(--warn-dim);color:var(--warn)}
+  .pill.low{background:var(--panel-2);color:var(--ink-dim)}
+  .pill.solid{background:var(--panel-2);color:var(--ink-dim)}
+  .pill.cluster{background:var(--ok-dim);color:var(--ok)}
+
+  .ticket-subject{
+    font-size:14px;font-weight:600;color:var(--ink);line-height:1.3;
+    margin-bottom:5px;
+  }
+  .ticket-ai{
+    font-size:12px;color:var(--ink-dim);line-height:1.45;
+    border-left:2px solid var(--accent-dim);padding-left:8px;margin-top:5px;
+  }
+  .ticket-ai.pending{color:var(--ink-ghost)}
+  .ticket-ai .ai-tag{
+    color:var(--accent);font-weight:700;font-size:10px;
+    letter-spacing:0.5px;margin-right:6px;
+    background:var(--accent-dim);padding:1px 5px;border-radius:4px;
+  }
+  .ticket-foot{
+    display:flex;gap:12px;font-size:12px;color:var(--ink-dim);
+    margin-top:6px;flex-wrap:wrap;
+  }
+  .ticket-foot .key{color:var(--ink-ghost);margin-right:3px;font-weight:500}
+
+  .ticket-right{text-align:right;font-size:12px;color:var(--ink-dim);flex-shrink:0}
+  .age{font-size:15px;font-weight:700;color:var(--ink);line-height:1}
+  .age.aging{color:var(--warn)}
+  .age.stale{color:var(--danger)}
+
+  /* ===== DETAIL PANEL ===== */
+  .detail{border-left:1px solid var(--border);overflow-y:auto;background:var(--panel)}
+  .detail-empty{
+    display:grid;place-items:center;height:100%;text-align:center;
+    padding:40px;color:var(--ink-dim);
+  }
+  .detail-empty .big{
+    font-size:40px;color:var(--ink-ghost);margin-bottom:10px;
+  }
+  .detail-hd{
+    padding:16px 20px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:var(--panel);z-index:5;
+  }
+  .detail-hd .id{color:var(--ink-dim);font-size:12px;font-weight:500;margin-bottom:4px;font-family:var(--sans)}
+  .detail-hd h2{font-size:17px;font-weight:700;line-height:1.3;margin:0 0 10px;letter-spacing:-0.2px}
+  .detail-pills{display:flex;gap:6px;flex-wrap:wrap}
+
+  .detail-section{padding:14px 20px;border-bottom:1px solid var(--border)}
+  .detail-section h3{
+    font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;
+    color:var(--ink-ghost);margin-bottom:10px;
+    display:flex;align-items:center;gap:8px;
+  }
+  .detail-section h3::before{
+    content:"";width:3px;height:14px;background:var(--accent);border-radius:2px;
+  }
+  .detail-section h3 .right{margin-left:auto;font-size:10px;color:var(--ink-ghost);text-transform:none}
+
+  .kv{display:grid;grid-template-columns:100px 1fr;gap:5px 10px;font-size:13px}
+  .kv dt{color:var(--ink-dim);font-weight:500;font-size:12px;padding-top:1px}
+  .kv dd{color:var(--ink);word-break:break-word}
+
+  .ai-block{
+    background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:12px;font-size:13px;
+    line-height:1.55;margin-bottom:8px;
+  }
+  .ai-block:last-child{margin-bottom:0}
+  .ai-block .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}
+  .ai-block .head .ttl{font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--accent)}
+  .ai-block .head .conf{font-size:11px;color:var(--ink-dim)}
+  .ai-block ul{margin:4px 0 0 16px;padding:0}
+  .ai-block li{margin-bottom:3px}
+  .ai-block .suggest-row{
+    display:flex;gap:8px;align-items:center;font-size:13px;
+    padding:5px 0;border-bottom:1px solid var(--border);
+  }
+  .ai-block .suggest-row:last-child{border:none}
+  .ai-block .suggest-row strong{
+    color:var(--ink-dim);font-weight:500;min-width:80px;
+    font-size:11px;text-transform:uppercase;letter-spacing:0.3px;
+  }
+  .ai-block .suggest-row .val{color:var(--ink);font-weight:500;flex:1}
+  .ai-block .suggest-row .cur{color:var(--ink-ghost);font-size:11px;text-decoration:line-through;margin-right:4px}
+  .ai-block .stage-btn{
+    background:transparent;border:1px solid var(--accent);color:var(--accent);
+    font-family:var(--sans);font-size:11px;font-weight:600;
+    padding:3px 8px;cursor:pointer;border-radius:var(--radius-sm);
+    transition:.12s;
+  }
+  .ai-block .stage-btn:hover{background:var(--accent);color:#fff}
+  .ai-block .stage-btn.staged{background:var(--accent);color:#fff}
+
+  .similar-card{
+    background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;cursor:pointer;
+    transition:.12s;
+  }
+  .similar-card:hover{border-color:var(--border-hot)}
+  .similar-card .sc-hd{
+    display:flex;justify-content:space-between;font-size:11px;
+    color:var(--ink-dim);font-weight:500;margin-bottom:4px;
+  }
+  .similar-card .sc-match{color:var(--ok);font-weight:700}
+  .similar-card .sc-subj{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:5px}
+  .similar-card .sc-res{
+    font-size:12px;color:var(--ink-dim);line-height:1.5;
+    border-left:2px solid var(--ok);padding-left:8px;
+  }
+
+  .action-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .action-grid .btn{justify-content:center;font-size:12px}
+
+  .loader{
+    display:inline-block;width:14px;height:14px;
+    border:2px solid var(--border-hot);border-top-color:var(--accent);
+    border-radius:50%;animation:spin 0.7s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ===== STANDUP MODE ===== */
+  .standup{padding:20px 24px;overflow-y:auto;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  .standup-card{
+    background:var(--panel);border:1px solid var(--border);
+    border-radius:var(--radius);padding:18px;
+  }
+  .standup-card.wide{grid-column:span 2}
+  .standup-card h2{font-size:18px;font-weight:700;margin-bottom:3px;letter-spacing:-0.3px}
+  .standup-card .sub{font-size:12px;color:var(--ink-dim);font-weight:500;margin-bottom:14px}
+  .standup-row{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;
+  }
+  .standup-row:last-child{border:none}
+  .standup-row .lbl{color:var(--ink-dim)}
+  .standup-row .val{font-size:22px;font-weight:700;letter-spacing:-0.5px}
+  .standup-row .val.alert{color:var(--danger)}
+  .standup-row .val.warn{color:var(--warn)}
+  .standup-row .val.ok{color:var(--ok)}
+  .standup-list .si{
+    padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;
+    display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;
+    transition:.12s;border-radius:var(--radius-sm);
+  }
+  .standup-list .si:hover{background:var(--panel-2);padding-left:6px}
+  .standup-list .si:last-child{border-bottom:none}
+  .si-num{
+    font-size:20px;color:var(--ink-ghost);width:28px;
+    text-align:center;font-weight:700;line-height:1.2;
+  }
+  .si-body .subj{font-size:13px;font-weight:600;margin-bottom:3px}
+  .si-body .why{font-size:12px;color:var(--ink-dim);line-height:1.4}
+  .si-body .meta{font-size:11px;color:var(--ink-ghost);font-weight:500;margin-top:3px}
+  .si-prio{padding:2px 8px;font-size:11px;font-weight:600;border-radius:20px;align-self:start}
+
+  /* ===== STAGED CHANGES PANEL ===== */
+  .staged-panel{
+    position:fixed;top:0;right:0;bottom:0;width:460px;
+    background:var(--panel);border-left:1px solid var(--border);
+    transform:translateX(100%);transition:transform .25s ease-out;
+    z-index:60;display:flex;flex-direction:column;
+    box-shadow:-8px 0 24px rgba(0,0,0,0.5);
+  }
+  .staged-panel.open{transform:translateX(0)}
+  .staged-hd{
+    padding:16px 20px;border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .staged-hd h2{font-size:17px;font-weight:700}
+  .staged-hd .close{background:none;border:none;color:var(--ink-dim);font-size:22px;cursor:pointer;line-height:1}
+  .staged-body{flex:1;overflow-y:auto;padding:14px 20px}
+  .staged-empty{text-align:center;padding:40px 20px;color:var(--ink-dim);font-size:13px}
+  .staged-item{
+    background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius);padding:12px;margin-bottom:8px;
+  }
+  .staged-item .si-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .staged-item .si-tid{color:var(--accent);font-size:12px;font-weight:700;font-family:var(--sans)}
+  .staged-item .si-rm{background:none;border:none;color:var(--ink-ghost);cursor:pointer;font-size:16px}
+  .staged-item .si-rm:hover{color:var(--danger)}
+  .staged-item .si-subj{font-size:13px;font-weight:600;margin-bottom:8px;line-height:1.3}
+  .staged-item .si-change{
+    font-size:12px;color:var(--ink-dim);
+    padding:6px 8px;background:var(--bg);border-radius:var(--radius-sm);
+    border-left:2px solid var(--accent);margin-bottom:4px;
+  }
+  .staged-item .si-change strong{
+    color:var(--ink);font-weight:600;font-size:11px;text-transform:uppercase;
+  }
+  .staged-item .si-change .arrow{color:var(--ink-ghost);margin:0 6px}
+  .staged-item .si-change .new{color:var(--accent);font-weight:600}
+  .staged-ft{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px}
+
+  /* ===== MODALS ===== */
+  .modal-back{
+    position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;
+    display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);
+  }
+  .modal-back.open{display:flex}
+  .modal{
+    background:var(--panel);border:1px solid var(--border);
+    border-radius:var(--radius-lg);width:680px;max-width:90vw;
+    max-height:85vh;display:flex;flex-direction:column;
+    box-shadow:var(--shadow-md);
+  }
+  .modal.wide{width:880px}
+  .modal-hd{
+    padding:16px 20px;border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .modal-hd h2{font-size:17px;font-weight:700}
+  .modal-hd .close{background:none;border:none;color:var(--ink-dim);font-size:22px;cursor:pointer;line-height:1}
+  .modal-body{padding:20px;overflow-y:auto}
+  .modal-body p{margin-bottom:12px;font-size:13px;color:var(--ink-dim);line-height:1.6}
+  .modal-body textarea, .modal-body input[type=text]{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);color:var(--ink);
+    font-family:var(--sans);font-size:13px;padding:10px 12px;outline:none;
+  }
+  .modal-body textarea{height:300px;resize:vertical;line-height:1.5}
+  .modal-body textarea:focus, .modal-body input:focus{border-color:var(--accent)}
+  .modal-ft{
+    padding:14px 20px;border-top:1px solid var(--border);
+    display:flex;justify-content:space-between;gap:10px;align-items:center;
+  }
+  .modal-ft .hint{font-size:12px;color:var(--ink-dim)}
+
+  /* ===== PATTERN DETECTION ===== */
+  .pattern-list{padding:20px 24px;overflow-y:auto}
+  .pattern-card{
+    background:var(--panel);border:1px solid var(--border);
+    border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;
+    border-left:3px solid var(--info);
+  }
+  .pattern-card.high{border-left-color:var(--danger)}
+  .pattern-card.med{border-left-color:var(--warn)}
+  .pattern-card h3{font-size:16px;font-weight:700;margin-bottom:5px;letter-spacing:-0.2px}
+  .pattern-card .pc-sev{
+    font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
+    color:var(--info);margin-bottom:4px;
+  }
+  .pattern-card.high .pc-sev{color:var(--danger)}
+  .pattern-card.med .pc-sev{color:var(--warn)}
+  .pattern-card .pc-desc{font-size:13px;color:var(--ink-dim);line-height:1.6;margin-bottom:10px}
+  .pattern-card .pc-recommend{
+    background:var(--panel-2);padding:10px 12px;border-radius:var(--radius-sm);
+    border-left:2px solid var(--accent);font-size:13px;line-height:1.5;margin-bottom:10px;
+  }
+  .pattern-card .pc-tickets{display:flex;flex-wrap:wrap;gap:5px}
+  .pattern-card .pc-ticket{
+    background:var(--panel-2);border:1px solid var(--border);
+    padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;
+    color:var(--ink);cursor:pointer;transition:.12s;
+  }
+  .pattern-card .pc-ticket:hover{background:var(--accent-dim);color:var(--accent);border-color:var(--accent)}
+
+  /* ===== V3: M365 CONTEXT ===== */
+  .m365-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px}
+  .m365-chip{
+    background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:8px 10px;
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .m365-chip .lbl{font-size:10px;font-weight:600;color:var(--ink-ghost);text-transform:uppercase;letter-spacing:0.5px}
+  .m365-chip .val{color:var(--ink);font-weight:500;font-size:13px}
+  .m365-chip.ok{border-left:2px solid var(--ok)}
+  .m365-chip.warn{border-left:2px solid var(--warn)}
+  .m365-chip.alert{border-left:2px solid var(--danger)}
+  .m365-chip.unknown{border-left:2px solid var(--ink-ghost)}
+  .m365-chip .val .sub{font-size:11px;color:var(--ink-dim);font-weight:400;display:block}
+  .m365-loading{text-align:center;padding:20px;color:var(--ink-dim);font-size:13px}
+  .m365-blocking{
+    background:var(--danger-dim);border:1px solid var(--danger);
+    border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;margin-bottom:8px;
+  }
+  .m365-blocking strong{color:var(--danger);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-right:6px}
+  .m365-groups, .m365-licenses{
+    grid-column:span 2;background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:8px 10px;
+  }
+  .m365-groups .tag, .m365-licenses .tag{
+    display:inline-block;background:var(--panel);border:1px solid var(--border);
+    color:var(--ink-dim);padding:2px 8px;font-size:11px;border-radius:20px;
+    margin:2px 3px 2px 0;
+  }
+  .m365-groups .tag.sec{border-color:var(--accent-dim);color:var(--accent)}
+  .m365-groups .tag.dist{border-color:var(--info);color:var(--info)}
+
+  /* ===== V3: PROVISIONING ===== */
+  .provisioning{padding:14px 20px;border-bottom:1px solid var(--border)}
+  .provisioning h3{
+    font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;
+    color:var(--ink-ghost);margin-bottom:10px;display:flex;align-items:center;gap:8px;
+  }
+  .provisioning h3::before{content:"";width:3px;height:14px;background:var(--accent-2);border-radius:2px}
+  .provisioning h3 .right{margin-left:auto;font-size:10px;color:var(--ink-ghost);text-transform:none}
+  .prov-parsed{
+    background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;margin-bottom:10px;
+  }
+  .prov-parsed dl{display:grid;grid-template-columns:100px 1fr;gap:4px 10px}
+  .prov-parsed dt{font-size:11px;color:var(--ink-dim);font-weight:500}
+  .prov-parsed dd{color:var(--ink);font-weight:500}
+  .prov-step{
+    display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;
+    padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);margin-bottom:5px;font-size:13px;
+  }
+  .prov-step .num{
+    width:24px;height:24px;display:grid;place-items:center;
+    background:var(--panel);border:1px solid var(--border);
+    color:var(--ink-dim);font-size:11px;font-weight:700;border-radius:50%;
+  }
+  .prov-step.done .num{background:var(--ok);color:#000;border-color:var(--ok)}
+  .prov-step.failed .num{background:var(--danger);color:#fff;border-color:var(--danger)}
+  .prov-step.running .num{background:var(--warn);color:#000;border-color:var(--warn)}
+  .prov-step .body{min-width:0}
+  .prov-step .lbl{font-weight:600;color:var(--ink)}
+  .prov-step .mode{font-size:11px;color:var(--ink-dim);font-weight:500;margin-top:2px}
+  .prov-step.done .mode{color:var(--ok)}
+  .prov-step.failed .mode{color:var(--danger)}
+  .prov-step .msg{font-size:11px;color:var(--ink-dim);margin-top:2px}
+  .prov-step .act-btn{
+    background:transparent;border:1px solid var(--border);color:var(--ink-dim);
+    font-family:var(--sans);font-size:11px;font-weight:600;
+    padding:4px 10px;cursor:pointer;border-radius:var(--radius-sm);
+    white-space:nowrap;transition:.12s;
+  }
+  .prov-step .act-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .prov-step .act-btn:disabled{opacity:.4;cursor:not-allowed}
+  .prov-step .act-btn.danger{border-color:var(--danger);color:var(--danger)}
+  .prov-step .act-btn.danger:hover{background:var(--danger-dim)}
+
+  /* ===== V3: AI REPLY ===== */
+  .reply-block{
+    background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:12px;margin-bottom:8px;
+  }
+  .reply-block .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px}
+  .reply-block .head .ttl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent)}
+  .reply-block .head .conf{font-size:11px;color:var(--ink-dim)}
+  .reply-block textarea{
+    width:100%;min-height:120px;background:var(--bg);border:1px solid var(--border);
+    border-radius:var(--radius-sm);color:var(--ink);font-family:var(--sans);
+    font-size:13px;padding:10px 12px;outline:none;resize:vertical;line-height:1.5;
+  }
+  .reply-block textarea:focus{border-color:var(--accent)}
+  .reply-block .ft{display:flex;gap:8px;margin-top:8px;align-items:center}
+  .reply-block .ft .hint{font-size:11px;color:var(--ink-dim);flex:1}
+  .reply-block.review{border-left:3px solid var(--warn)}
+
+  /* ===== AUTO-REPLY SETTINGS ===== */
+  .ars-section{margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:14px}
+  .ars-section:last-child{border:none;padding-bottom:0}
+  .ars-toggle{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer}
+  .ars-toggle input{
+    appearance:none;width:36px;height:20px;background:var(--border);
+    border-radius:20px;position:relative;cursor:pointer;transition:.15s;
+  }
+  .ars-toggle input:checked{background:var(--accent)}
+  .ars-toggle input::after{
+    content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+    background:#fff;border-radius:50%;transition:.15s;
+  }
+  .ars-toggle input:checked::after{transform:translateX(16px)}
+  .ars-cat{
+    display:grid;grid-template-columns:1fr auto 80px;gap:10px;align-items:center;
+    padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;
+  }
+  .ars-cat:last-child{border:none}
+  .ars-cat .name{color:var(--ink)}
+  .ars-cat input[type=number]{
+    width:60px;background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);color:var(--ink);
+    padding:4px 8px;font-family:var(--sans);font-size:12px;text-align:right;
+  }
+  .ars-add{display:flex;gap:6px;margin-top:8px}
+  .ars-add input{
+    flex:1;background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);color:var(--ink);
+    padding:6px 10px;font-family:var(--sans);font-size:13px;
+  }
+  .ars-blocked-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+  .ars-blocked-list .tag{
+    background:var(--danger-dim);color:var(--danger);
+    padding:3px 8px;font-size:11px;font-weight:600;border-radius:20px;
+    display:inline-flex;align-items:center;gap:4px;
+  }
+  .ars-blocked-list .tag button{background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;line-height:1;padding:0}
+
+  /* ===== AUTO-TRIAGE FEED ===== */
+  .at-feed-item{
+    background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:5px;font-size:13px;
+  }
+  .at-feed-item .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+  .at-feed-item .tid{color:var(--accent);font-weight:700;font-family:var(--sans);font-size:12px}
+  .at-feed-item .when{color:var(--ink-dim);font-size:11px}
+  .at-feed-item .applied{color:var(--ok);font-size:12px;margin:2px 0}
+  .at-feed-item .skipped{color:var(--ink-dim);font-size:11px}
+
+  /* ===== TEAMS MODAL ===== */
+  .teams-output{
+    background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+    padding:14px;font-family:var(--sans);font-size:12px;line-height:1.6;
+    white-space:pre-wrap;color:var(--ink);max-height:280px;overflow-y:auto;
+  }
+  .agent-select{display:flex;gap:6px;margin-bottom:12px}
+  .agent-select button{
+    flex:1;background:var(--panel-2);border:1px solid var(--border);
+    border-radius:var(--radius-sm);color:var(--ink-dim);
+    font-family:var(--sans);font-size:12px;font-weight:500;
+    padding:8px;cursor:pointer;transition:.12s;
+  }
+  .agent-select button:hover{border-color:var(--border-hot);color:var(--ink)}
+  .agent-select button.active{background:var(--teams);color:#fff;border-color:var(--teams)}
+
+  /* ===== TOAST ===== */
+  .toast-host{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+  .toast{
+    background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--accent);
+    border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;
+    max-width:340px;animation:slideIn .25s ease-out;pointer-events:auto;
+    box-shadow:var(--shadow-md);
+  }
+  .toast.error{border-left-color:var(--danger)}
+  .toast.info{border-left-color:var(--info)}
+  @keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+  /* ===== SCROLLBARS ===== */
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border-hot)}
+
+  .empty-state{padding:60px 20px;text-align:center;color:var(--ink-dim)}
+  .empty-state .big{font-size:32px;color:var(--ink-ghost);margin-bottom:8px}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">R</div>
+      <div>
+        <div class="brand-title">Triage Cockpit <em>// v3</em></div>
+        <div style="font-size:10px;color:var(--ink-dim);letter-spacing:1.5px;margin-top:2px">RENOVATION BRANDS · IT OPERATIONS</div>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <div class="meta-item"><span class="live-dot"></span><span id="sessionTime">--:--:--</span></div>
+      <div class="meta-item">AGENT · <span id="agentName">SIGNED IN</span></div>
+      <button class="btn" id="refreshBtn">⟳ Refresh</button>
+      <button class="btn" id="openStagedBtn">📋 Staged <span class="pill-sm" id="stagedCount">0</span></button>
+      <button class="btn primary" id="bulkAiBtn">⚡ AI Triage Visible</button>
+      <button class="btn ghost" id="openSettingsBtn" title="Auto-reply settings">⚙</button>
+      <button class="btn ghost" id="userMenuBtn" title="Account"><span id="userInitials">··</span></button>
+    </div>
+  </header>
+
+  <!-- MODE TABS -->
+  <nav class="modetabs">
+    <button class="modetab active" data-mode="triage">▎ Triage</button>
+    <button class="modetab" data-mode="standup">☀ Standup <span class="badge" id="standupBadge">0</span></button>
+    <button class="modetab" data-mode="patterns">⌗ Patterns <span class="badge" id="patternsBadge">0</span></button>
+    <button class="modetab" data-mode="devices">📦 Devices</button>
+    <button class="modetab" data-mode="network">🌐 Network</button>
+    <button class="modetab" data-mode="kb">🧠 Knowledge</button>
+    <button class="modetab" data-mode="analytics">📊 Analytics</button>
+    <button class="modetab" data-mode="fleet">🍎 Mac Fleet</button>
+  </nav>
+
+  <div class="main" id="mainTriage">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sb-section">
+        <div class="sb-label">Saved views</div>
+        <div id="savedViewsList"></div>
+        <button class="save-view-btn" id="saveViewBtn">+ Save current filters</button>
+      </div>
+
+      <div class="sb-section">
+        <div class="sb-label">Scope <span class="count" id="totalCount">0</span></div>
+        <button class="filter-btn active" data-scope="mine">Assigned to me <span class="num" id="cnt-mine">0</span></button>
+        <button class="filter-btn" data-scope="team">IT team group <span class="num" id="cnt-team">0</span></button>
+        <button class="filter-btn" data-scope="unassigned">Unassigned <span class="num" id="cnt-unassigned">0</span></button>
+        <button class="filter-btn" data-scope="all">All open <span class="num" id="cnt-all">0</span></button>
+      </div>
+
+      <div class="sb-section">
+        <div class="sb-label">Status</div>
+        <button class="filter-btn active" data-status="all">All statuses <span class="num" id="cnt-stat-all">0</span></button>
+        <button class="filter-btn" data-status="2">Open <span class="num" id="cnt-stat-2">0</span></button>
+        <button class="filter-btn" data-status="3">Pending <span class="num" id="cnt-stat-3">0</span></button>
+        <button class="filter-btn" data-status="6">Hold <span class="num" id="cnt-stat-6">0</span></button>
+      </div>
+
+      <div class="sb-section">
+        <div class="sb-label">Priority</div>
+        <button class="filter-btn active" data-prio="all">All <span class="num" id="cnt-prio-all">0</span></button>
+        <button class="filter-btn" data-prio="4">Urgent <span class="num" id="cnt-prio-4">0</span></button>
+        <button class="filter-btn" data-prio="3">High <span class="num" id="cnt-prio-3">0</span></button>
+        <button class="filter-btn" data-prio="2">Medium <span class="num" id="cnt-prio-2">0</span></button>
+        <button class="filter-btn" data-prio="1">Low <span class="num" id="cnt-prio-1">0</span></button>
+      </div>
+
+      <div class="sb-section">
+        <div class="sb-label">Group by</div>
+        <div class="group-by">
+          <button data-group="none" class="active">None</button>
+          <button data-group="category">Cat.</button>
+          <button data-group="priority">Prio.</button>
+          <button data-group="requester">Req.</button>
+        </div>
+      </div>
+
+      <div class="sb-section">
+        <div class="sb-label">IT Team</div>
+        <div style="display:flex;gap:8px;padding:4px 8px">
+          <div data-agent-drop="Nathan Maharg" data-color="#6366f1" title="Drag ticket to assign to Nathan"
+            style="width:36px;height:36px;border-radius:50%;background:rgba(99,102,241,0.2);color:#6366f1;display:grid;place-items:center;font-size:11px;font-weight:800;cursor:default;border:2px solid transparent;transition:.15s">NM</div>
+          <div data-agent-drop="Steve Mitchell" data-color="#4ade80" title="Drag ticket to assign to Steve"
+            style="width:36px;height:36px;border-radius:50%;background:rgba(74,222,128,0.2);color:#4ade80;display:grid;place-items:center;font-size:11px;font-weight:800;cursor:default;border:2px solid transparent;transition:.15s">SM</div>
+          <div data-agent-drop="Eric Hnatov" data-color="#fbbf24" title="Drag ticket to assign to Eric"
+            style="width:36px;height:36px;border-radius:50%;background:rgba(251,191,36,0.2);color:#fbbf24;display:grid;place-items:center;font-size:11px;font-weight:800;cursor:default;border:2px solid transparent;transition:.15s">EH</div>
+        </div>
+        <div style="font-size:10px;color:var(--ink-ghost);padding:2px 8px">Drag a ticket to assign</div>
+      </div>
+    </aside>
+
+    <!-- CENTER -->
+    <section class="center">
+      <div class="toolbar">
+        <div class="search"><input id="searchInput" placeholder="Search tickets, requesters, categories..."/></div>
+        <div class="toolbar-actions">
+          <button class="btn ghost" id="selectAllBtn">☑ Select page</button>
+          <button class="btn" id="bulkSummarizeBtn" disabled>⚡ Summarize <span class="pill-sm" id="selCount">0</span></button>
+        </div>
+      </div>
+
+      <div class="stats-strip">
+        <div class="stat alert"><div class="stat-label">SLA breach</div><div class="stat-value" id="stat-breach">0</div><div class="stat-sub">past due</div></div>
+        <div class="stat warn"><div class="stat-label">At risk</div><div class="stat-value" id="stat-risk">0</div><div class="stat-sub">&lt; 4h to SLA</div></div>
+        <div class="stat"><div class="stat-label">Urgent + High</div><div class="stat-value" id="stat-high">0</div><div class="stat-sub">priority ≥ 3</div></div>
+        <div class="stat"><div class="stat-label">Unassigned</div><div class="stat-value" id="stat-unass">0</div><div class="stat-sub">need triage</div></div>
+        <div class="stat ok"><div class="stat-label">AI summarized</div><div class="stat-value" id="stat-ai">0</div><div class="stat-sub" id="stat-ai-sub">of 0 visible</div></div>
+      </div>
+
+      <div class="ticket-list" id="ticketList"></div>
+    </section>
+
+    <!-- DETAIL -->
+    <aside class="detail" id="detailPanel">
+      <div class="detail-empty">
+        <div class="big">Select a ticket</div>
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">No ticket selected · Click a row to inspect</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- STANDUP VIEW -->
+  <div class="standup hidden" id="mainStandup"></div>
+
+  <!-- PATTERNS VIEW -->
+  <div class="pattern-list hidden" id="mainPatterns"></div>
+
+  <!-- DEVICES VIEW -->
+  <div class="hidden" id="mainDevices" style="overflow-y:auto;padding:20px 24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">Device Management</h2>
+        <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Retriever warehouse inventory · returns · deployments</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="newReturnBtn">📦 New Return</button>
+        <button class="btn primary" id="newDeployBtn">🚀 Deploy Device</button>
+        <button class="btn ghost" id="refreshDevicesBtn">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <!-- Balances strip -->
+    <div id="balancesStrip" style="display:flex;gap:10px;margin-bottom:16px"></div>
+
+    <!-- Three panels with individual filters -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+
+      <!-- Warehouse -->
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700">Warehouse Inventory</div>
+            <div style="font-size:11px;color:var(--ink-dim)" id="warehouseCount">—</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="position:relative">
+              <input id="wh-search" type="text" placeholder="Search name, serial…"
+                style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:6px 10px 6px 28px;font-family:var(--sans);font-size:12px;outline:none"
+                oninput="filterDevices()"/>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <select id="wh-status" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All statuses</option>
+                <option value="ready_for_deployment">Ready</option>
+                <option value="deployed">Deployed</option>
+                <option value="disposed">Disposed</option>
+              </select>
+              <select id="wh-type" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All types</option>
+                <option value="macbook">MacBook</option>
+                <option value="thinkpad">ThinkPad</option>
+                <option value="dell">Dell</option>
+                <option value="laptop">Laptop</option>
+                <option value="monitor">Monitor</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div id="warehouseList" style="padding:8px;overflow-y:auto;flex:1;max-height:480px">
+          <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Active Returns -->
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700">Active Returns</div>
+            <div style="font-size:11px;color:var(--ink-dim)" id="returnsCount">—</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="position:relative">
+              <input id="ret-search" type="text" placeholder="Search employee, city…"
+                style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:6px 10px 6px 28px;font-family:var(--sans);font-size:12px;outline:none"
+                oninput="filterDevices()"/>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <select id="ret-status-filter" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All statuses</option>
+                <option value="box_delivered">Box Delivered</option>
+                <option value="return_in_transit">In Transit</option>
+                <option value="received_at_warehouse">Received</option>
+              </select>
+              <input id="ret-date-from" type="date" onchange="filterDevices()" title="From date"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none"/>
+            </div>
+          </div>
+        </div>
+        <div id="returnsList" style="padding:8px;overflow-y:auto;flex:1;max-height:480px">
+          <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Active Deployments -->
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:13px;font-weight:700">Active Deployments</div>
+            <div style="font-size:11px;color:var(--ink-dim)" id="deploymentsCount">—</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="position:relative">
+              <input id="dep-search-filter" type="text" placeholder="Search employee, city…"
+                style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:6px 10px 6px 28px;font-family:var(--sans);font-size:12px;outline:none"
+                oninput="filterDevices()"/>
+              <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <select id="dep-status-filter" onchange="filterDevices()"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none">
+                <option value="">All statuses</option>
+                <option value="awaiting_shipment">Awaiting Shipment</option>
+                <option value="in_transit">In Transit</option>
+                <option value="delivered">Delivered</option>
+              </select>
+              <input id="dep-date-from" type="date" onchange="filterDevices()" title="From date"
+                style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:5px 8px;font-family:var(--sans);font-size:11px;outline:none"/>
+            </div>
+          </div>
+        </div>
+        <div id="deploymentsList" style="padding:8px;overflow-y:auto;flex:1;max-height:480px">
+          <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- NETWORK VIEW -->
+  <div class="hidden" id="mainNetwork" style="overflow-y:auto;padding:20px 24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">Network Infrastructure</h2>
+        <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Meraki firewalls · switches · access points · <span id="netLastUpdated" style="color:var(--ink-ghost)">loading…</span></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" id="refreshNetworkBtn">⟳ Refresh</button>
+      </div>
+    </div>
+
+    <!-- Summary strip -->
+    <div id="networkSummaryStrip" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px"></div>
+
+    <!-- Two column layout: grid + drill-down -->
+    <div style="display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start">
+
+      <!-- Left: site grid -->
+      <div>
+        <div style="position:relative;margin-bottom:12px">
+          <input id="networkSearch" type="text" placeholder="Search sites or devices…"
+            style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 12px 8px 32px;font-family:var(--sans);font-size:13px;outline:none"
+            oninput="filterNetwork()"/>
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:14px">🔍</span>
+        </div>
+        <div id="networkGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px">
+          <div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">
+            <div class="loader" style="margin:0 auto 12px"></div>Loading Meraki data…
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: drill-down panel -->
+      <div id="networkDrillDown" style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);position:sticky;top:0">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:700;color:var(--ink-dim)">Select a site to drill down</div>
+        </div>
+        <div id="networkDrillContent" style="padding:14px 16px;font-size:12px;color:var(--ink-dim);text-align:center;padding:40px 16px">
+          Click any site card to see detailed device info, uplink performance, and connected clients
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<!-- KNOWLEDGE BASE VIEW -->
+<div class="hidden" id="mainKb" style="overflow-y:auto;padding:20px 24px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div>
+      <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">🧠 Institutional Memory</h2>
+      <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">AI-extracted resolutions from closed tickets · searchable knowledge base</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn ghost" id="refreshKbBtn">⟳ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Search bar -->
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <div style="position:relative;flex:1">
+      <input id="kbSearch" type="text" placeholder="Search knowledge base…"
+        style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 12px 8px 32px;font-family:var(--sans);font-size:13px;outline:none"
+        oninput="searchKB()"/>
+      <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:14px">🔍</span>
+    </div>
+    <select id="kbCategory" onchange="searchKB()"
+      style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none">
+      <option value="">All categories</option>
+      <option>Hardware</option><option>Software</option><option>Network</option>
+      <option>NetSuite</option><option>Employee Onboarding/Offboarding</option>
+    </select>
+  </div>
+
+  <!-- Stats strip -->
+  <div id="kbStats" style="display:flex;gap:10px;margin-bottom:16px"></div>
+
+  <!-- Article grid -->
+  <div id="kbGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px">
+    <div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">
+      <div class="loader" style="margin:0 auto 12px"></div>Loading knowledge base…
+    </div>
+  </div>
+</div>
+
+<!-- ANALYTICS VIEW -->
+<div class="hidden" id="mainAnalytics" style="overflow-y:auto;padding:20px 24px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div>
+      <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">📊 Analytics</h2>
+      <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Brand attribution · business impact · ticket trends</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn ghost" id="refreshAnalyticsBtn">⟳ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Brand breakdown -->
+  <div style="margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+      🏷️ Tickets by Brand
+      <button class="btn ghost" style="font-size:11px;padding:4px 8px" id="manageBrandsBtn">Manage brands</button>
+    </div>
+    <div id="brandGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px"></div>
+  </div>
+
+  <!-- Category heatmap -->
+  <div style="margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">📂 Category breakdown</div>
+    <div id="categoryBreakdown" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px"></div>
+  </div>
+
+  <!-- Deflection report -->
+  <div style="margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">🔮 Deflection opportunities</div>
+    <div id="deflectionReport" style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+      <div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:13px">Load tickets to see deflection analysis</div>
+    </div>
+  </div>
+
+  <!-- Business impact top 10 -->
+  <div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">📊 Highest business impact tickets</div>
+    <div id="impactList"></div>
+  </div>
+</div>
+
+<!-- MAC FLEET VIEW -->
+<div class="hidden" id="mainFleet" style="overflow-y:auto;padding:20px 24px">
+
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div>
+      <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">🍎 Mac Fleet</h2>
+      <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Kandji/Iru MDM · device compliance · security posture</div>
+    </div>
+    <button class="btn ghost" id="refreshFleetBtn">⟳ Refresh</button>
+  </div>
+
+  <!-- Compliance summary strip -->
+  <div id="fleetSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px"></div>
+
+  <!-- Filter bar -->
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+    <div style="position:relative;flex:1;min-width:200px">
+      <input id="fleetSearch" type="text" placeholder="Search name, serial, user…"
+        style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 12px 7px 30px;font-family:var(--sans);font-size:13px;outline:none;box-sizing:border-box"
+        oninput="_fleetPage=0;renderFleetList()"/>
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+    </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="fleet-filter-btn active" data-filter="all" onclick="setFleetFilter('all',this)">All</button>
+      <button class="fleet-filter-btn" data-filter="mac" onclick="setFleetFilter('mac',this)">Macs only</button>
+      <button class="fleet-filter-btn" data-filter="issues" onclick="setFleetFilter('issues',this)">⚠ Issues</button>
+      <button class="fleet-filter-btn" data-filter="filevault" onclick="setFleetFilter('filevault',this)">🔓 FileVault off</button>
+      <button class="fleet-filter-btn" data-filter="stale" onclick="setFleetFilter('stale',this)">📵 Stale 5d+</button>
+      <button class="fleet-filter-btn" data-filter="offline" onclick="setFleetFilter('offline',this)">🔴 Offline</button>
+    </div>
+    <div id="fleetCount" style="font-size:12px;color:var(--ink-dim);white-space:nowrap"></div>
+  </div>
+
+  <!-- Device grid — larger cards, 2 per row -->
+  <div id="fleetGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:12px">
+    <div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">
+      <div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div id="fleetPagination" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px;padding-bottom:20px"></div>
+</div>
+
+<!-- MAC DEVICE DETAIL MODAL -->
+<div class="modal-back" id="macDeviceModal">
+  <div class="modal" style="width:560px">
+    <div class="modal-hd">
+      <h2 id="macDevTitle">Mac Details</h2>
+      <button class="close" data-close="macDeviceModal">×</button>
+    </div>
+    <div class="modal-body" id="macDevBody" style="padding:20px;max-height:70vh;overflow-y:auto"></div>
+    <div class="modal-ft">
+      <div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" data-close="macDeviceModal">Close</button>
+        <button class="btn primary hidden" id="macDevForceCheckin">⟳ Force Check-in</button>
+        <button class="btn" id="macDevLock" style="color:var(--warn);border-color:var(--warn);display:none">🔒 Lock</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BRAND ASSIGNMENT MODAL -->
+<div class="modal-back" id="brandModal">
+  <div class="modal" style="width:460px">
+    <div class="modal-hd">
+      <h2>🏷️ Assign Brand</h2>
+      <button class="close" data-close="brandModal">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="brandModalDesc" style="margin-bottom:14px">Which brand does this person work for?</p>
+      <div id="brandOptions" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+    </div>
+    <div class="modal-ft">
+      <div class="hint">Saved permanently — won't ask again</div>
+      <button class="btn ghost" data-close="brandModal">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- MANAGE BRANDS MODAL -->
+<div class="modal-back" id="manageBrandsModal">
+  <div class="modal" style="width:500px">
+    <div class="modal-hd">
+      <h2>🏷️ Manage Brands</h2>
+      <button class="close" data-close="manageBrandsModal">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:14px">Add or remove brands. Domain → Brand name mapping.</p>
+      <div id="brandList" style="margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px">
+        <input id="newBrandDomain" type="text" placeholder="domain.com"
+          style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        <input id="newBrandName" type="text" placeholder="Brand name"
+          style="flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        <button class="btn primary" onclick="addBrand()">Add</button>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <div></div>
+      <button class="btn ghost" data-close="manageBrandsModal">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- RUNBOOK MODAL -->
+<div class="modal-back" id="runbookModal">
+  <div class="modal wide">
+    <div class="modal-hd">
+      <h2 id="runbookModalTitle">⚡ Runbook</h2>
+      <button class="close" data-close="runbookModal">×</button>
+    </div>
+    <div class="modal-body" id="runbookModalBody" style="min-height:300px"></div>
+    <div class="modal-ft">
+      <div class="hint" id="runbookModalHint"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" data-close="runbookModal">Close</button>
+        <button class="btn primary hidden" id="runbookNextBtn">Next step →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- KB ARTICLE MODAL -->
+<div class="modal-back" id="kbArticleModal">
+  <div class="modal" style="width:600px">
+    <div class="modal-hd">
+      <h2 id="kbArticleTitle">KB Article</h2>
+      <button class="close" data-close="kbArticleModal">×</button>
+    </div>
+    <div class="modal-body" id="kbArticleBody" style="padding:20px"></div>
+    <div class="modal-ft">
+      <div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" data-close="kbArticleModal">Close</button>
+        <a id="kbArticleFsLink" class="btn primary" target="_blank" style="text-decoration:none">Open in Freshservice ↗</a>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-back" id="deviceDetailModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-hd">
+      <h2 id="devDetailTitle">Device Details</h2>
+      <button class="close" data-close="deviceDetailModal">×</button>
+    </div>
+    <div class="modal-body" id="devDetailBody" style="padding:20px"></div>
+    <div class="modal-ft">
+      <div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" data-close="deviceDetailModal">Close</button>
+        <button class="btn primary hidden" id="devDetailDeployBtn">🚀 Deploy This Device</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NETWORK DEVICE DETAIL MODAL -->
+<div class="modal-back" id="networkDeviceModal">
+  <div class="modal" style="width:500px">
+    <div class="modal-hd">
+      <h2 id="netDevTitle">Device Details</h2>
+      <button class="close" data-close="networkDeviceModal">×</button>
+    </div>
+    <div class="modal-body" id="netDevBody" style="padding:20px"></div>
+    <div class="modal-ft">
+      <div></div>
+      <button class="btn ghost" data-close="networkDeviceModal">Close</button>
+    </div>
+  </div>
+</div>
+<aside class="staged-panel" id="stagedPanel">
+  <div class="staged-hd">
+    <h2>Staged Changes</h2>
+    <button class="close" id="closeStagedBtn">×</button>
+  </div>
+  <div class="staged-body" id="stagedBody"></div>
+  <div class="staged-ft">
+    <button class="btn ghost" id="clearStagedBtn" style="flex:1">Clear all</button>
+    <button class="btn primary" id="applyStagedBtn" style="flex:2">Apply to Freshservice →</button>
+  </div>
+</aside>
+
+<!-- CONNECTION STATUS MODAL -->
+<div class="modal-back" id="dataModal">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2>Connection status</h2>
+      <button class="close" data-close="dataModal">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="connStatus">
+        <div style="display:grid;grid-template-columns:auto 1fr auto;gap:10px 14px;font-size:12px;align-items:center">
+          <div style="color:var(--ink-dim);text-transform:uppercase;letter-spacing:1.5px;font-size:10px">Freshservice</div>
+          <div id="connFs">checking…</div>
+          <div id="connFsDot" style="width:8px;height:8px;background:var(--ink-ghost);border-radius:50%"></div>
+
+          <div style="color:var(--ink-dim);text-transform:uppercase;letter-spacing:1.5px;font-size:10px">Claude AI</div>
+          <div id="connAi">checking…</div>
+          <div id="connAiDot" style="width:8px;height:8px;background:var(--ink-ghost);border-radius:50%"></div>
+
+          <div style="color:var(--ink-dim);text-transform:uppercase;letter-spacing:1.5px;font-size:10px">Identity</div>
+          <div id="connId">checking…</div>
+          <div id="connIdDot" style="width:8px;height:8px;background:var(--ink-ghost);border-radius:50%"></div>
+
+          <div style="color:var(--ink-dim);text-transform:uppercase;letter-spacing:1.5px;font-size:10px">Last fetch</div>
+          <div id="connLast" style="grid-column:span 2">—</div>
+        </div>
+      </div>
+      <p style="margin-top:16px;font-size:11px;color:var(--ink-ghost)">
+        Tickets refresh automatically every 60 seconds. Click "⟳ Refresh" in the top bar to force a refresh now.
+      </p>
+    </div>
+    <div class="modal-ft">
+      <div class="hint">v2 · azure-deployed</div>
+      <div style="display:flex;gap:8px">
+        <a class="btn ghost" href="/.auth/logout">Sign out</a>
+        <button class="btn primary" id="forceRefreshBtn">Refresh now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SAVE VIEW MODAL -->
+<div class="modal-back" id="saveViewModal">
+  <div class="modal" style="width:440px">
+    <div class="modal-hd">
+      <h2>Save view</h2>
+      <button class="close" data-close="saveViewModal">×</button>
+    </div>
+    <div class="modal-body">
+      <p>Save the current filter combination as a named view. It'll appear in the sidebar for one-click access.</p>
+      <input type="text" id="viewNameInput" placeholder="e.g. My urgent stuff" maxlength="40"/>
+      <div id="viewPreview" style="margin-top:12px;font-size:11px;color:var(--ink-dim);line-height:1.6"></div>
+    </div>
+    <div class="modal-ft">
+      <div class="hint">stored locally</div>
+      <button class="btn primary" id="confirmSaveViewBtn">Save view</button>
+    </div>
+  </div>
+</div>
+
+<!-- TEAMS HANDOFF MODAL -->
+<div class="modal-back" id="teamsModal">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2>Teams hand-off</h2>
+      <button class="close" data-close="teamsModal">×</button>
+    </div>
+    <div class="modal-body">
+      <p>Hand this ticket off to a teammate. The message is formatted for Microsoft Teams — paste into a chat or channel.</p>
+      <div class="sb-label" style="margin-bottom:8px">Hand off to</div>
+      <div class="agent-select" id="agentSelect">
+        <button data-agent="Steve Mitchell">Steve M.</button>
+        <button data-agent="Eric Hnatov">Eric H.</button>
+        <button data-agent="Channel #it-helpdesk">#it-helpdesk</button>
+      </div>
+      <div class="sb-label" style="margin:14px 0 8px">Message preview</div>
+      <div class="teams-output" id="teamsOutput">Select a recipient above to generate the message.</div>
+    </div>
+    <div class="modal-ft">
+      <div class="hint">Teams markdown · paste anywhere</div>
+      <button class="btn primary" id="copyTeamsBtn">Copy to clipboard</button>
+    </div>
+  </div>
+</div>
+
+<!-- AUTO-REPLY SETTINGS MODAL -->
+<div class="modal-back" id="settingsModal">
+  <div class="modal wide">
+    <div class="modal-hd">
+      <h2>Auto-reply settings</h2>
+      <button class="close" data-close="settingsModal">×</button>
+    </div>
+    <div class="modal-body" id="settingsBody">
+      <div style="text-align:center;padding:30px;color:var(--ink-dim)">Loading settings…</div>
+    </div>
+    <div class="modal-ft">
+      <div class="hint">Settings apply globally — affects Steve & Eric too</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" id="resetSettingsBtn">Reset to defaults</button>
+        <button class="btn primary" id="saveSettingsBtn">Save settings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-host" id="toastHost"></div>
+
+<!-- RETRIEVER RETURN MODAL -->
+<div class="modal-back" id="returnModal">
+  <div class="modal" style="width:560px">
+    <div class="modal-hd">
+      <h2>📦 Create Device Return</h2>
+      <button class="close" data-close="returnModal">×</button>
+    </div>
+    <div class="modal-body">
+      <p>A prepaid shipping box will be sent to the employee's address. The device will be returned to Retriever's warehouse.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Employee Name *</div>
+          <input type="text" id="ret-name" placeholder="Jane Smith" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Employee Email *</div>
+          <input type="text" id="ret-email" placeholder="jane@renovationbrands.com" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Serial Number</div>
+          <input type="text" id="ret-serial" placeholder="Optional" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Address Line 1 *</div>
+          <input type="text" id="ret-addr1" placeholder="123 Main Street" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Address Line 2</div>
+          <input type="text" id="ret-addr2" placeholder="Apt, Suite, etc. (optional)" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">City *</div>
+          <input type="text" id="ret-city" placeholder="Chicago" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">State *</div>
+          <input type="text" id="ret-state" placeholder="IL" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">ZIP *</div>
+          <input type="text" id="ret-zip" placeholder="60601" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Freshservice Ticket ID</div>
+          <input type="text" id="ret-ticket" placeholder="Optional" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div style="grid-column:span 2">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="ret-charger" style="width:14px;height:14px"/> Include charger in return
+          </label>
+        </div>
+      </div>
+      <div id="ret-confirm-block" style="display:none;margin-top:16px;background:rgba(245,158,11,0.1);border:1px solid var(--warn);border-radius:var(--radius-sm);padding:12px;font-size:13px">
+        <div style="font-weight:700;color:var(--warn);margin-bottom:6px">⚠ Confirm Return Order</div>
+        <div id="ret-confirm-text" style="color:var(--ink-dim);line-height:1.6"></div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <div class="hint">Orders are final after 30 minutes</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" id="ret-preview-btn">Preview →</button>
+        <button class="btn primary hidden" id="ret-confirm-btn">✓ Confirm & Submit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RETRIEVER DEPLOY MODAL -->
+<div class="modal-back" id="deployModal">
+  <div class="modal" style="width:560px">
+    <div class="modal-hd">
+      <h2>🚀 Deploy Device</h2>
+      <button class="close" data-close="deployModal">×</button>
+    </div>
+    <div class="modal-body">
+      <p>Ship a device from Retriever's warehouse directly to an employee.</p>
+      <div style="margin-top:14px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Select Device *</div>
+        <select id="dep-device" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none">
+          <option value="">Loading warehouse…</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Employee Name *</div>
+          <input type="text" id="dep-name" placeholder="Jane Smith" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Employee Email *</div>
+          <input type="text" id="dep-email" placeholder="jane@renovationbrands.com" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Address Line 1 *</div>
+          <input type="text" id="dep-addr1" placeholder="123 Main Street" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Address Line 2</div>
+          <input type="text" id="dep-addr2" placeholder="Optional" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">City *</div>
+          <input type="text" id="dep-city" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">State *</div>
+          <input type="text" id="dep-state" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">ZIP *</div>
+          <input type="text" id="dep-zip" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Shipping Speed</div>
+          <select id="dep-speed" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none">
+            <option value="standard_shipping">Standard</option>
+            <option value="2nd_day">2nd Day</option>
+            <option value="next_day">Next Day</option>
+          </select>
+        </div>
+        <div style="grid-column:span 2">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px">Freshservice Ticket ID</div>
+          <input type="text" id="dep-ticket" placeholder="Optional" style="width:100%;background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 10px;font-family:var(--sans);font-size:13px;outline:none"/>
+        </div>
+      </div>
+      <div id="dep-confirm-block" style="display:none;margin-top:16px;background:rgba(79,142,247,0.1);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:12px;font-size:13px">
+        <div style="font-weight:700;color:var(--accent);margin-bottom:6px">🚀 Confirm Deployment</div>
+        <div id="dep-confirm-text" style="color:var(--ink-dim);line-height:1.6"></div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <div class="hint">Device ships from Retriever warehouse</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" id="dep-preview-btn">Preview →</button>
+        <button class="btn primary hidden" id="dep-confirm-btn">✓ Confirm & Deploy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const ME = {
+  names: ["Nathan Maharg","Nathan","Nathan.M","nathan.maharg"],
+  team: ["Nathan Maharg","Steve Mitchell","Eric Hnatov"]
+};
+const STATUS_MAP = {2:"Open",3:"Pending",4:"Resolved",5:"Closed",6:"Hold"};
+const PRIO_MAP   = {1:"Low",2:"Medium",3:"High",4:"Urgent"};
+const PRIO_CLASS = {1:"low",2:"medium",3:"high",4:"urgent"};
+const PRIO_NAME_TO_NUM = {"Low":1,"Medium":2,"High":3,"Urgent":4};
+
+// ============================================================
+// STATE
+// ============================================================
+let TICKETS = [];
+let CLOSED_TICKETS = [];
+let SELECTED_IDS = new Set();
+let CURRENT_ID = null;
+let SUMMARIES = new Map();
+let SIMILAR = new Map();      // ticketId -> array of {id,subject,resolution,match}
+let STAGED = [];              // [{ticketId, ticketSubject, field, currentValue, newValue}]
+let SAVED_VIEWS = [];         // [{id, name, filters}]
+let PATTERNS = [];            // detected patterns
+let LAST_SEEN_TIMESTAMP = null; // for "what's new" detection
+let TEAMS_HANDOFF_CONTEXT = null;
+// V3 state
+let M365_CONTEXT = new Map();    // ticketId -> { found, displayName, ... }
+let M365_LOADING = new Set();    // ticketIds currently fetching context
+let PROVISIONING = new Map();    // ticketId -> { parsed, checklist, type }
+let PROVISIONING_LOADING = new Set();
+let DRAFT_REPLIES = new Map();   // ticketId -> { reply, confidence, needsHumanReview, rationale }
+let DRAFT_LOADING = new Set();
+let AUTO_REPLY_SETTINGS = null;  // loaded lazily
+let FILTERS = { scope:"mine", status:"all", prio:"all", aging:"all", group:"none", search:"" };
+let CURRENT_MODE = "triage";
+
+// ============================================================
+// (sample data removed — live data via /api/tickets)
+// ============================================================
+
+// ============================================================
+// STORAGE (window.storage with fallback)
+// ============================================================
+async function storeGet(key){
+  try{
+    if(window.storage && typeof window.storage.get === "function"){
+      const r = await window.storage.get(key);
+      return r?.value ? JSON.parse(r.value) : null;
+    }
+  }catch(e){/* missing key just returns null */}
+  try{
+    const s = localStorage.getItem("rb_"+key);
+    return s ? JSON.parse(s) : null;
+  }catch(e){return null;}
+}
+async function storeSet(key, val){
+  const json = JSON.stringify(val);
+  try{
+    if(window.storage && typeof window.storage.set === "function"){
+      await window.storage.set(key, json);
+      return;
+    }
+  }catch(e){}
+  try{ localStorage.setItem("rb_"+key, json); }catch(e){}
 }
 
-function getPrincipal(req) {
-  const header = req.headers && (req.headers["x-ms-client-principal"] || req.headers.get?.("x-ms-client-principal"));
-  if (!header) return null;
+// ============================================================
+// UTIL
+// ============================================================
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const escape = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function ageHours(iso){if(!iso)return 0;return (Date.now()-new Date(iso).getTime())/3600000;}
+function formatAge(iso){
+  const h = ageHours(iso);
+  if(h<1) return Math.round(h*60)+"m";
+  if(h<24) return Math.round(h)+"h";
+  return Math.round(h/24)+"d";
+}
+function ageClass(iso){const h=ageHours(iso);if(h>168)return"stale";if(h>72)return"aging";return"";}
+function isMine(t){return t.responder_name && ME.names.some(n=>n.toLowerCase()===t.responder_name.toLowerCase());}
+function isTeam(t){return t.responder_name && ME.team.some(n=>n.toLowerCase()===t.responder_name.toLowerCase());}
+function isNew(t){
+  if(!LAST_SEEN_TIMESTAMP) return false;
+  return new Date(t.created_at) > new Date(LAST_SEEN_TIMESTAMP);
+}
+
+function toast(msg, type){
+  const t=document.createElement("div");t.className="toast"+(type?" "+type:"");t.textContent=msg;
+  $("#toastHost").appendChild(t);
+  setTimeout(()=>{t.style.opacity="0";t.style.transition="opacity .3s";setTimeout(()=>t.remove(),300);},3200);
+}
+
+// ============================================================
+// RENDER: TRIAGE MODE
+// ============================================================
+function applyFilters(){
+  let list = [...TICKETS];
+  if(FILTERS.scope==="mine") list = list.filter(isMine);
+  else if(FILTERS.scope==="team") list = list.filter(isTeam);
+  else if(FILTERS.scope==="unassigned") list = list.filter(t=>!t.responder_name);
+  if(FILTERS.status!=="all") list = list.filter(t=>String(t.status)===FILTERS.status);
+  if(FILTERS.prio!=="all") list = list.filter(t=>String(t.priority)===FILTERS.prio);
+  if(FILTERS.aging==="stale") list = list.filter(t=>ageHours(t.created_at)>168);
+  else if(FILTERS.aging==="aging") list = list.filter(t=>{const h=ageHours(t.created_at);return h>=72&&h<=168;});
+  else if(FILTERS.aging==="fresh") list = list.filter(t=>ageHours(t.created_at)<24);
+  if(FILTERS.search){
+    const q=FILTERS.search.toLowerCase();
+    list = list.filter(t=>
+      (t.subject||"").toLowerCase().includes(q) ||
+      (t.description_text||"").toLowerCase().includes(q) ||
+      (t.requester_name||"").toLowerCase().includes(q) ||
+      (t.category||"").toLowerCase().includes(q) ||
+      String(t.id).includes(q)
+    );
+  }
+  list.sort((a,b)=>{
+    if(b.priority!==a.priority) return (b.priority||0)-(a.priority||0);
+    return new Date(a.created_at) - new Date(b.created_at);
+  });
+  return list;
+}
+
+function updateCounts(){
+  // Only count active tickets (open=2, pending=3, hold=6) in sidebar and badges
+  const ACTIVE = new Set([2, 3, 6]);
+  const activeTickets = TICKETS.filter(t => ACTIVE.has(t.status));
+
+  $("#totalCount").textContent = activeTickets.length;
+  $("#cnt-mine").textContent = activeTickets.filter(isMine).length;
+  $("#cnt-team").textContent = activeTickets.filter(isTeam).length;
+  $("#cnt-unassigned").textContent = activeTickets.filter(t => !t.responder_name).length;
+  $("#cnt-all").textContent = activeTickets.length;
+
+  const scoped = (() => {
+    if(FILTERS.scope==="mine") return activeTickets.filter(isMine);
+    if(FILTERS.scope==="team") return activeTickets.filter(isTeam);
+    if(FILTERS.scope==="unassigned") return activeTickets.filter(t=>!t.responder_name);
+    return activeTickets;
+  })();
+  $("#cnt-stat-all").textContent = scoped.length;
+  [2,3,6].forEach(s => $("#cnt-stat-"+s).textContent = scoped.filter(t => t.status===s).length);
+  $("#cnt-prio-all").textContent = scoped.length;
+  [1,2,3,4].forEach(p => $("#cnt-prio-"+p).textContent = scoped.filter(t => t.priority===p).length);
+
+  // Stats strip uses full filtered list (respects all filters including closed)
+  const visible = applyFilters();
+  $("#stat-breach").textContent = visible.filter(t=>t.due_by && new Date(t.due_by)<new Date()).length;
+  $("#stat-risk").textContent = visible.filter(t=>{
+    if(!t.due_by) return false;
+    const ms = new Date(t.due_by) - Date.now();
+    return ms>0 && ms < 4*3600000;
+  }).length;
+  $("#stat-high").textContent = visible.filter(t=>t.priority>=3).length;
+  $("#stat-unass").textContent = visible.filter(t=>!t.responder_name).length;
+  $("#stat-ai").textContent = visible.filter(t=>SUMMARIES.has(t.id)).length;
+  $("#stat-ai-sub").textContent = "of "+visible.length+" visible";
+
+  // Standup badge: new ACTIVE tickets since last seen
+  const newCount = activeTickets.filter(isNew).length;
+  $("#standupBadge").textContent = newCount;
+  $$(".modetab").forEach(t=>t.classList.remove("alert"));
+  if(newCount>0) document.querySelector('[data-mode="standup"]').classList.add("alert");
+
+  // Patterns badge — clear once viewed
+  $("#patternsBadge").textContent = PATTERNS.length;
+
+  $("#stagedCount").textContent = STAGED.length;
+}
+
+function renderList(){
+  _kbFocusIdx = -1; // reset keyboard nav on every render
+  const list = applyFilters();
+  const host = $("#ticketList");
+  if(!list.length){
+    host.innerHTML = `<div class="empty-state"><div class="big">No matches</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">Adjust filters or load data</div></div>`;
+    return;
+  }
+
+  let html = "";
+  if(FILTERS.group==="none"){
+    html = list.map(renderTicketCard).join("");
+  } else {
+    const groups = {};
+    list.forEach(t=>{
+      let key;
+      if(FILTERS.group==="category") key = t.category || "Uncategorized";
+      else if(FILTERS.group==="priority") key = PRIO_MAP[t.priority]||"Unknown";
+      else if(FILTERS.group==="requester") key = t.requester_name||"Unknown";
+      (groups[key] = groups[key]||[]).push(t);
+    });
+    html = Object.keys(groups).sort().map(k=>{
+      return `<div class="group-header"><span>${escape(k)}</span><span class="line"></span><span class="ghdr-count">${groups[k].length}</span></div>`+
+        groups[k].map(renderTicketCard).join("");
+    }).join("");
+  }
+  host.innerHTML = html;
+
+  host.querySelectorAll(".ticket").forEach(el=>{
+    el.addEventListener("click",e=>{
+      if(e.target.closest(".ticket-check")) return;
+      selectTicket(parseInt(el.dataset.id));
+    });
+    el.querySelector(".ticket-check").addEventListener("click",e=>{
+      e.stopPropagation();
+      const id = parseInt(el.dataset.id);
+      if(SELECTED_IDS.has(id)) SELECTED_IDS.delete(id); else SELECTED_IDS.add(id);
+      renderList();
+      updateSelCount();
+    });
+  });
+}
+
+function renderTicketCard(t){
+  const sum = SUMMARIES.get(t.id);
+  const query = $("#searchInput")?.value?.trim() || "";
+  const subjectHtml = query ? highlightText(t.subject||"(no subject)", query) : escape(t.subject||"(no subject)");
+  const aiBlock = sum
+    ? `<div class="ticket-ai"><span class="ai-tag">AI</span>${escape(sum.summary)}</div>`
+    : `<div class="ticket-ai pending"><span class="ai-tag">AI</span><em>Not yet summarized · click to triage</em></div>`;
+  const prioPill = `<span class="pill ${PRIO_CLASS[t.priority]||""}">${PRIO_MAP[t.priority]||"?"}</span>`;
+  const statusPill = `<span class="pill">${STATUS_MAP[t.status]||"?"}</span>`;
+  const inCluster = PATTERNS.find(p=>p.ticketIds.includes(t.id));
+  const clusterPill = inCluster ? `<span class="pill cluster">⌗ ${escape(inCluster.tag)}</span>` : "";
+  const checked = SELECTED_IDS.has(t.id);
+  const sel = CURRENT_ID===t.id?"selected":"";
+  const newClass = isNew(t) ? "new" : "";
+
+  // Priority left border color
+  const prioBorderColor = { 4: "#f87171", 3: "#fbbf24", 2: "#fbbf2466", 1: "transparent" }[t.priority] || "transparent";
+
+  // Age heatmap
+  const ageDays = t.created_at ? Math.floor((Date.now()-new Date(t.created_at))/(86400000)) : 0;
+  const ageStyle = getAgeStyle(ageDays);
+  const ageTxt = formatAge(t.created_at);
+
+  // SLA countdown
+  const slaHtml = slaCountdown(t.due_by) || "";
+
+  // Agent avatar
+  const assigneeHtml = agentAvatar(t.responder_name);
+
+  // SLA data attribute for live updates
+  const slaAttr = t.due_by ? `data-sla="${t.due_by}"` : "";
+
+  return `
+    <div class="ticket ${sel} ${newClass}" data-id="${t.id}"
+      draggable="true"
+      style="border-left:3px solid ${prioBorderColor};${ageStyle.bg ? `background:${ageStyle.bg}` : ''}"
+      ondragstart="event.dataTransfer.setData('ticketId','${t.id}')">
+      <div class="ticket-check ${checked?"checked":""}"></div>
+      <div class="ticket-body">
+        <div class="ticket-meta-row">
+          <span class="ticket-id">#${t.id}</span>
+          ${prioPill}${statusPill}${clusterPill}
+          <span>· ${escape(t.category||"—")}${t.sub_category?" / "+escape(t.sub_category):""}</span>
+        </div>
+        <div class="ticket-subject">${subjectHtml}</div>
+        ${aiBlock}
+        <div class="ticket-foot">
+          <span><span class="key">REQ</span>${escape(t.requester_name||"Unknown")}</span>
+          <span><span class="key">ASSIGN</span>${assigneeHtml}</span>
+          ${slaHtml ? `<span ${slaAttr}>${slaHtml}</span>` : ""}
+        </div>
+      </div>
+      <div class="ticket-right">
+        <div class="age" style="color:${ageStyle.color};font-size:15px;font-weight:800">${ageTxt}</div>
+        <div style="margin-top:2px;font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">old</div>
+      </div>
+    </div>
+  `;
+}
+
+function selectTicket(id){
+  CURRENT_ID = id;
+  renderList();
+  renderDetail();
+  const t = TICKETS.find(x=>x.id===id);
+  // lazy-load similar tickets for this one
+  if(!SIMILAR.has(id) && CLOSED_TICKETS.length){
+    findSimilarTickets(id);
+  }
+  // lazy-load M365 context
+  if(t && !M365_CONTEXT.has(id) && !M365_LOADING.has(id)){
+    fetchM365Context(id, t);
+  }
+  // detect onboarding/offboarding & auto-parse
+  if(t && isProvisioningTicket(t) && !PROVISIONING.has(id) && !PROVISIONING_LOADING.has(id)){
+    parseProvisioning(id);
+  }
+  // load requester profile silently
+  const reqEmail = t?.requester_email || t?.email;
+  if (t && reqEmail && !_profileCache.has(reqEmail) && !_profileLoading.has(reqEmail)) {
+    loadRequesterProfile(id, reqEmail);
+  }
+  // load Meraki context for Network tickets
+  if (t && t.category === "Network") {
+    setTimeout(() => loadMerakiTicketContext(id, t), 300);
+  }
+  // load Kandji device context for all tickets
+  if (t) setTimeout(() => loadKandjiTicketContext(id, t), 400);
+  // load ScreenConnect sessions
+  if (t) setTimeout(() => loadScreenConnectContext(id, t), 500);
+}
+
+function isProvisioningTicket(t){
+  if(t.category === "Employee Onboarding/Offboarding") return true;
+  const hay = ((t.subject||"") + " " + (t.description_text||"")).toLowerCase();
+  return /\b(onboard|new hire|new employee|offboard|off-board|termination|last day|leaving)\b/.test(hay);
+}
+
+function renderDetail(){
+  const t = TICKETS.find(x=>x.id===CURRENT_ID);
+  const host = $("#detailPanel");
+  if(!t){
+    host.innerHTML = `<div class="detail-empty"><div class="big">Select a ticket</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">No ticket selected</div></div>`;
+    return;
+  }
+  const sum = SUMMARIES.get(t.id);
+  const similar = SIMILAR.get(t.id);
+  const m365 = M365_CONTEXT.get(t.id);
+  const provisioning = PROVISIONING.get(t.id);
+  const draft = DRAFT_REPLIES.get(t.id);
+  const isProv = isProvisioningTicket(t);
+  const reqEmail = t.requester_email || t.email;
+  const profile = reqEmail ? _profileCache.get(reqEmail) : null;
+  const slaText = t.due_by
+    ? (new Date(t.due_by)<new Date()
+        ? `<span style="color:var(--danger)">⚠ Breached ${formatAge(t.due_by)} ago</span>`
+        : `Due ${new Date(t.due_by).toLocaleString()}`)
+    : "—";
+
+  // build suggestion rows with stage buttons
+  const suggestRows = sum?.suggestions ? Object.entries({
+    category: ['Category', t.category],
+    sub_category: ['Sub-cat', t.sub_category],
+    priority: ['Priority', PRIO_MAP[t.priority]],
+    assignee: ['Assignee', t.responder_name||'unassigned']
+  }).map(([field,[label,current]])=>{
+    const suggested = sum.suggestions[field];
+    if(!suggested || suggested === current) return "";
+    const staged = STAGED.find(s=>s.ticketId===t.id && s.field===field);
+    return `
+      <div class="suggest-row">
+        <strong>${label}</strong>
+        <span class="val"><span class="cur">${escape(current||"—")}</span>${escape(suggested)}</span>
+        <button class="stage-btn ${staged?"staged":""}" data-stage="${field}" data-new="${escape(suggested)}" data-cur="${escape(current||"—")}" data-label="${label}">${staged?"✓ Staged":"+ Stage"}</button>
+      </div>
+    `;
+  }).join("") : "";
+
+  host.innerHTML = `
+    <div class="detail-hd">
+      <div class="id">Ticket #${t.id}</div>
+      <h2>${escape(t.subject||"(no subject)")}</h2>
+      <div class="detail-pills">
+        <span class="pill ${PRIO_CLASS[t.priority]||""}">${PRIO_MAP[t.priority]||"?"}</span>
+        <span class="pill">${STATUS_MAP[t.status]||"?"}</span>
+        <span class="pill solid">${escape(t.category||"—")}</span>
+        ${t.sub_category?`<span class="pill solid">${escape(t.sub_category)}</span>`:""}
+        ${isProv?`<span class="pill" style="border-color:var(--accent-2);color:var(--accent-2)">⚙ PROVISIONING</span>`:""}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Metadata</h3>
+      <dl class="kv">
+        <dt>Requester</dt><dd>${escape(t.requester_name||"Unknown")}</dd>
+        <dt>Assignee</dt><dd>${escape(t.responder_name||"— unassigned")}</dd>
+        <dt>Group</dt><dd>${escape(t.group_name||"—")}</dd>
+        <dt>Created</dt><dd>${new Date(t.created_at).toLocaleString()} (${formatAge(t.created_at)} ago)</dd>
+        <dt>Updated</dt><dd>${new Date(t.updated_at).toLocaleString()} (${formatAge(t.updated_at)} ago)</dd>
+        <dt>SLA</dt><dd>${slaText}</dd>
+      </dl>
+    </div>
+
+    <div class="detail-section" id="m365Section">
+      <h3>M365 Context <span class="right" id="m365Status">${m365===undefined?(M365_LOADING.has(t.id)?"loading…":"requester lookup pending"):(m365.found?"":"requester not found")}</span></h3>
+      <div id="m365Content">${renderM365(m365)}</div>
+    </div>
+
+    ${t.category === "Network" ? `
+    <div class="detail-section">
+      <h3>🌐 Network Context</h3>
+      <div id="merakiCtx_${t.id}" style="font-size:12px;color:var(--ink-dim)">
+        <div class="loader" style="display:inline-block;margin-right:6px"></div>Checking Meraki for network issues…
+      </div>
+    </div>` : ""}
+
+    <div class="detail-section">
+      <h3>🍎 Mac Device Context</h3>
+      <div id="kandjiCtx_${t.id}" style="font-size:12px;color:var(--ink-dim)">
+        <div class="loader" style="display:inline-block;margin-right:6px"></div>Looking up device in Kandji…
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>🖥️ Remote Access</h3>
+      <div id="scCtx_${t.id}" style="font-size:12px;color:var(--ink-dim)">
+        <div class="loader" style="display:inline-block;margin-right:6px"></div>Searching ScreenConnect…
+      </div>
+    </div>
+
+    ${isProv ? `
+    <div class="provisioning" id="provSection">
+      <h3>Provisioning checklist <span class="right">${provisioning?provisioning.parsed.type:"parsing…"}</span></h3>
+      <div id="provContent">${renderProvisioning(provisioning, t)}</div>
+    </div>` : ""}
+
+    <div class="detail-section">
+      <h3>Original message</h3>
+      <div style="font-size:12px;line-height:1.6;color:var(--ink-dim);background:var(--panel-2);padding:12px;border:1px solid var(--border);max-height:200px;overflow-y:auto">${escape(t.description_text||"(no description)")}</div>
+    </div>
+
+    <div class="detail-section">
+      <h3>AI Triage</h3>
+      <div id="aiContent">
+        ${sum ? renderAISummary(sum, suggestRows) : `
+          <div class="ai-block">
+            <p style="color:var(--ink-dim);font-style:italic">No AI analysis yet for this ticket.</p>
+            <button class="btn primary" id="runAiBtn" style="margin-top:10px;width:100%;justify-content:center">⚡ Run AI triage</button>
+          </div>
+        `}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Similar past tickets <span class="right" id="similarStatus">${similar===undefined?(CLOSED_TICKETS.length?"loading…":"no closed tickets loaded"):(similar.length+" found")}</span></h3>
+      <div id="similarContent">
+        ${renderSimilar(similar, t)}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>AI Reply <span class="right">${draft?(draft.needsHumanReview?"draft · needs review":"draft ready"):"draft on demand"}</span></h3>
+      <div id="replyContent">${renderReplyDraft(draft, t)}</div>
+    </div>
+
+    ${profile ? renderRequesterProfile(profile, reqEmail) : reqEmail ? `<div class="detail-section"><h3>Requester Intelligence</h3><div style="text-align:center;padding:12px;color:var(--ink-dim);font-size:12px"><span class="loader"></span> Loading profile…</div></div>` : ""}
+
+    ${renderRunbooksPanel(t)}
+
+    <div class="detail-section">
+      <h3>Quick actions</h3>
+        <button class="btn" data-action="set-pending">Set Pending</button>
+        <button class="btn" data-action="resolve">Resolve</button>
+        <button class="btn" data-action="close">Close</button>
+        <button class="btn" data-action="teams" style="grid-column:span 2;border-color:var(--teams);color:var(--teams)">↳ Hand off in Teams</button>
+      </div>
+      <div style="font-size:10px;color:var(--ink-dim);margin-top:10px;letter-spacing:1px">
+        Status & assignment changes go to the Staged panel. Apply pushes them to Freshservice.
+      </div>
+    </div>
+  `;
+
+  // wire
+  const aiBtn = host.querySelector("#runAiBtn");
+  if(aiBtn) aiBtn.addEventListener("click",()=>runAITriage([t.id]));
+  host.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>handleQuickAction(b.dataset.action,t)));
+  host.querySelectorAll("[data-stage]").forEach(b=>b.addEventListener("click",()=>{
+    stageChange(t, b.dataset.stage, b.dataset.cur, b.dataset.new, b.dataset.label);
+    renderDetail();
+  }));
+  // V3 wiring
+  const draftBtn = host.querySelector("#draftReplyBtn");
+  if(draftBtn) draftBtn.addEventListener("click",()=>generateDraftReply(t.id));
+  const regenBtn = host.querySelector("#regenReplyBtn");
+  if(regenBtn) regenBtn.addEventListener("click",()=>{DRAFT_REPLIES.delete(t.id);generateDraftReply(t.id);});
+  const sendBtn = host.querySelector("#sendReplyBtn");
+  if(sendBtn) sendBtn.addEventListener("click",()=>{
+    const text = host.querySelector("#replyText").value;
+    sendReply(t.id, text, false);
+  });
+  // Provisioning step buttons
+  host.querySelectorAll("[data-prov-step]").forEach(b=>{
+    b.addEventListener("click",()=>runProvisioningStep(t.id, b.dataset.provStep));
+  });
+}
+
+function renderAISummary(sum, suggestRows){
+  return `
+    <div class="ai-block">
+      <div class="head"><span class="ttl">Problem in plain English</span><span class="conf">${sum.confidence||"high"} confidence</span></div>
+      <div>${escape(sum.summary)}</div>
+    </div>
+    ${suggestRows ? `<div class="ai-block">
+      <div class="head"><span class="ttl">Suggested triage</span><span class="conf">click + Stage to queue</span></div>
+      ${suggestRows || "<p style='color:var(--ink-dim);font-size:11px;font-style:italic'>No changes recommended — current values look correct.</p>"}
+    </div>` : ""}
+    <div class="ai-block">
+      <div class="head"><span class="ttl">Likely resolution path</span></div>
+      <ul>${(sum.resolutions||[]).map(r=>`<li>${escape(r)}</li>`).join("")}</ul>
+    </div>
+    <div class="ai-block">
+      <div class="head"><span class="ttl">Recommended next action</span></div>
+      <div>${escape(sum.nextAction||"")}</div>
+    </div>
+  `;
+}
+
+function renderSimilar(similar, t){
+  if(similar === undefined){
+    return CLOSED_TICKETS.length
+      ? `<div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:11px"><span class="loader"></span> Finding similar tickets...</div>`
+      : `<div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:11px">Load closed tickets via "⟳ Load Data" to enable similar-ticket search.</div>`;
+  }
+  if(!similar.length){
+    return `<div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:11px">No similar past tickets found.</div>`;
+  }
+  return similar.map(s=>`
+    <div class="similar-card">
+      <div class="sc-hd">
+        <span>#${s.id} · ${escape(s.category||"—")}${s.sub_category?" / "+escape(s.sub_category):""}</span>
+        <span class="sc-match">${s.match}% match</span>
+      </div>
+      <div class="sc-subj">${escape(s.subject)}</div>
+      <div class="sc-res"><strong style="color:var(--ok);font-style:normal">Resolution:</strong> ${escape(s.resolution||"(no resolution note)")}</div>
+    </div>
+  `).join("");
+}
+
+function updateSelCount(){
+  $("#selCount").textContent = SELECTED_IDS.size;
+  $("#bulkSummarizeBtn").disabled = SELECTED_IDS.size === 0;
+}
+
+// ============================================================
+// V3: M365 CONTEXT
+// ============================================================
+async function fetchM365Context(ticketId, ticket){
+  // Need an email to lookup — Freshservice ticket has requester object or email field
+  const email = ticket.requester?.email || ticket.email || ticket.requester_email;
+  if(!email){
+    M365_CONTEXT.set(ticketId, { found: false, error: "no email on ticket" });
+    if(CURRENT_ID===ticketId) renderDetail();
+    return;
+  }
+  M365_LOADING.add(ticketId);
+  try{
+    const res = await fetch("/api/m365Context?email=" + encodeURIComponent(email));
+    if(!res.ok) throw new Error("API " + res.status);
+    const data = await res.json();
+    M365_CONTEXT.set(ticketId, data);
+  }catch(e){
+    M365_CONTEXT.set(ticketId, { found: false, error: e.message });
+  }finally{
+    M365_LOADING.delete(ticketId);
+  }
+  if(CURRENT_ID===ticketId) renderDetail();
+}
+
+function renderM365(m365){
+  if(m365 === undefined){
+    return `<div class="m365-loading"><span class="loader"></span> Loading M365 context…</div>`;
+  }
+  if(!m365.found){
+    return `<div class="m365-loading">Requester not found in directory${m365.error?" ("+escape(m365.error)+")":""}.</div>`;
+  }
+
+  // Flag potentially blocking issues
+  const blockers = [];
+  if(m365.accountEnabled === false) blockers.push("Account is DISABLED in Entra ID");
+  if(m365.riskySignIns && m365.riskySignIns.length > 0){
+    blockers.push(`${m365.riskySignIns.length} risky sign-in${m365.riskySignIns.length>1?"s":""} in last 7 days`);
+  }
+
+  const lastSignIn = m365.signInActivity?.lastSignInDateTime;
+  const lastSignInHours = lastSignIn ? (Date.now() - new Date(lastSignIn).getTime())/3600000 : null;
+
+  return `
+    ${blockers.length ? `<div class="m365-blocking">
+      <strong>⚠ Possible blocker</strong>
+      ${blockers.map(b=>`<div>• ${escape(b)}</div>`).join("")}
+    </div>` : ""}
+    <div class="m365-grid">
+      <div class="m365-chip ${m365.accountEnabled?"ok":"alert"}">
+        <div class="lbl">Account</div>
+        <div class="val">${m365.accountEnabled?"Enabled":"DISABLED"}<span class="sub">${escape(m365.upn||"")}</span></div>
+      </div>
+      <div class="m365-chip ${m365.mfa?.enrolled?"ok":(m365.mfa?.enrolled===null?"unknown":"warn")}">
+        <div class="lbl">MFA</div>
+        <div class="val">${m365.mfa?.enrolled===null?"Unknown":(m365.mfa?.enrolled?"Enrolled":"Not enrolled")}<span class="sub">${m365.mfa?.strongAuthCount||0} strong method(s)</span></div>
+      </div>
+      <div class="m365-chip ${lastSignInHours!==null?(lastSignInHours<48?"ok":(lastSignInHours<168?"warn":"alert")):"unknown"}">
+        <div class="lbl">Last sign-in</div>
+        <div class="val">${lastSignIn?formatAge(lastSignIn)+" ago":"Never recorded"}</div>
+      </div>
+      <div class="m365-chip ${m365.riskySignIns?.length?"alert":"ok"}">
+        <div class="lbl">Risky sign-ins</div>
+        <div class="val">${m365.riskySignIns?.length||0} (7d)</div>
+      </div>
+      <div class="m365-chip unknown" style="grid-column:span 2">
+        <div class="lbl">Role / Dept</div>
+        <div class="val">${escape(m365.jobTitle||"—")} · ${escape(m365.department||"—")}<span class="sub">${escape(m365.officeLocation||"office unknown")} · Manager: ${escape(m365.manager?.displayName||"?")}</span></div>
+      </div>
+      ${m365.licenses?.length ? `<div class="m365-licenses">
+        <div style="font-size:9px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">Licenses</div>
+        ${m365.licenses.map(l=>`<span class="tag">${escape(l.skuPartNumber)}</span>`).join("")}
+      </div>` : ""}
+      ${m365.groups?.length ? `<div class="m365-groups">
+        <div style="font-size:9px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">Groups (${m365.groups.length})</div>
+        ${m365.groups.slice(0,12).map(g=>`<span class="tag ${g.type==='security'?'sec':'dist'}">${escape(g.name)}</span>`).join("")}
+        ${m365.groups.length>12?`<span class="tag" style="color:var(--ink-dim)">+${m365.groups.length-12} more</span>`:""}
+      </div>` : ""}
+    </div>
+  `;
+}
+
+// ============================================================
+// V3: PROVISIONING (Onboarding/Offboarding)
+// ============================================================
+async function parseProvisioning(ticketId){
+  PROVISIONING_LOADING.add(ticketId);
+  try{
+    const res = await fetch("/api/onboardParse", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ticketId})
+    });
+    if(!res.ok) throw new Error("API " + res.status);
+    const data = await res.json();
+    if(data.type === "neither"){
+      // false positive on our keyword detection; don't show
+      PROVISIONING.set(ticketId, null);
+    } else {
+      PROVISIONING.set(ticketId, data);
+    }
+  }catch(e){
+    PROVISIONING.set(ticketId, { error: e.message });
+  }finally{
+    PROVISIONING_LOADING.delete(ticketId);
+  }
+  if(CURRENT_ID===ticketId) renderDetail();
+}
+
+function renderProvisioning(prov, ticket){
+  if(prov === undefined){
+    return `<div class="m365-loading"><span class="loader"></span> Parsing ticket with AI…</div>`;
+  }
+  if(prov === null){
+    return `<div class="m365-loading">This doesn't look like onboarding or offboarding after all.</div>`;
+  }
+  if(prov.error){
+    return `<div class="m365-loading" style="color:var(--danger)">Parse failed: ${escape(prov.error)}</div>`;
+  }
+  const { parsed, checklist } = prov;
+
+  const parsedRows = parsed.type === "onboarding" ? [
+    ["Name", parsed.displayName],
+    ["Role", parsed.jobTitle],
+    ["Department", parsed.department],
+    ["Manager", parsed.managerName],
+    ["Start date", parsed.startDate],
+    ["UPN", parsed.suggestedUpn],
+    ["License hint", parsed.licenseHint]
+  ] : [
+    ["Employee", parsed.employeeName],
+    ["Email", parsed.employeeEmail],
+    ["Last day", parsed.lastDay],
+    ["Forward to", parsed.managerName + (parsed.managerEmail?` <${parsed.managerEmail}>`:"")],
+    ["Forward days", parsed.forwardingDays]
+  ];
+
+  return `
+    ${parsed.completeness !== "complete" ? `<div class="m365-blocking" style="border-color:var(--warn);background:rgba(255,181,71,0.1)">
+      <strong style="color:var(--warn)">⚠ ${escape(parsed.completeness||"unknown")}</strong>
+      Missing: ${(parsed.missingFields||[]).map(f=>escape(f)).join(", ")||"(none specified)"}
+    </div>` : ""}
+    <div class="prov-parsed">
+      <dl>
+        ${parsedRows.filter(([,v])=>v).map(([k,v])=>`<dt>${escape(k)}</dt><dd>${escape(String(v))}</dd>`).join("")}
+      </dl>
+    </div>
+    ${checklist.map((step,i) => {
+      const statusClass = step.status === "done" ? "done" :
+                         step.status === "failed" ? "failed" :
+                         step.status === "running" ? "running" : "";
+      const modeLabel = step.mode === "auto" ? "AUTO" :
+                       step.mode === "manual-approve" ? "MANUAL APPROVE" :
+                       step.mode === "scheduled" ? "SCHEDULED" : "MANUAL";
+      const buttonLabel = step.status === "done" ? "✓ Done" :
+                         step.status === "failed" ? "↻ Retry" :
+                         step.mode === "auto" ? "▶ Run" :
+                         step.mode === "manual-approve" ? "▶ Generate" : "Mark done";
+      const isDanger = step.id === "disable-account" || step.id === "remove-licenses";
+      return `
+        <div class="prov-step ${statusClass}">
+          <div class="num">${i+1}</div>
+          <div class="body">
+            <div class="lbl">${escape(step.label)}</div>
+            <div class="mode">${modeLabel}${step.status?" · "+step.status.toUpperCase():""}</div>
+            ${step.message?`<div class="msg">${escape(step.message)}</div>`:""}
+          </div>
+          <button class="act-btn ${isDanger?"danger":""}" data-prov-step="${step.id}" ${step.status==="done"?"disabled":""}>${buttonLabel}</button>
+        </div>
+      `;
+    }).join("")}
+  `;
+}
+
+async function runProvisioningStep(ticketId, stepId){
+  const prov = PROVISIONING.get(ticketId);
+  if(!prov) return;
+  const step = prov.checklist.find(s=>s.id===stepId);
+  if(!step) return;
+  step.status = "running";
+  renderDetail();
+
+  try{
+    // Build params — merge step.params with any data from previous successful steps
+    let params = {...(step.params||{})};
+    // For chained steps that need userId from earlier create-user step:
+    if((stepId === "assign-license" || stepId === "add-groups") && !params.userId){
+      const createStep = prov.checklist.find(s=>s.id==="create-user");
+      if(createStep?.data?.userId) params.userId = createStep.data.userId;
+      if(createStep?.data?.upn) params.upn = createStep.data.upn;
+    }
+    if(stepId === "send-welcome"){
+      const createStep = prov.checklist.find(s=>s.id==="create-user");
+      if(createStep?.data?.tempPassword) params.tempPassword = createStep.data.tempPassword;
+      if(createStep?.data?.upn) params.upn = createStep.data.upn;
+    }
+
+    const res = await fetch("/api/onboardExecute", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ ticketId, stepId, params })
+    });
+    if(!res.ok){
+      const errBody = await res.json().catch(()=>({}));
+      throw new Error(errBody.error || "API " + res.status);
+    }
+    const result = await res.json();
+    step.status = result.ok ? "done" : "failed";
+    step.message = result.message;
+    step.data = result.data;
+
+    if(stepId === "send-welcome" && result.data){
+      // Pop a modal with the welcome email content for the agent to send
+      showWelcomeEmail(result.data);
+    }
+    toast(result.ok ? `✓ ${step.label}` : `✗ ${step.label}: ${result.message}`, result.ok?undefined:"error");
+  }catch(e){
+    step.status = "failed";
+    step.message = e.message;
+    toast(`Failed: ${e.message}`, "error");
+  }
+  renderDetail();
+}
+
+function showWelcomeEmail(data){
+  // Quick & dirty — copy to clipboard with a toast since we already have message_compose patterns elsewhere
+  const block = `To: ${data.to||"(manager email)"}\nCc: ${data.cc||"(new user)"}\nSubject: ${data.subject}\n\n${data.body}`;
+  navigator.clipboard.writeText(block).then(()=>{
+    toast("Welcome email copied to clipboard — review and send via Outlook");
+  });
+}
+
+// ============================================================
+// V3: AI REPLY DRAFT
+// ============================================================
+async function generateDraftReply(ticketId){
+  if(DRAFT_LOADING.has(ticketId)) return;
+  DRAFT_LOADING.add(ticketId);
+  renderDetail();
+  try{
+    const res = await fetch("/api/replyDraft", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ticketId})
+    });
+    if(!res.ok) throw new Error("API " + res.status);
+    const data = await res.json();
+    DRAFT_REPLIES.set(ticketId, data);
+  }catch(e){
+    toast("Draft failed: " + e.message, "error");
+  }finally{
+    DRAFT_LOADING.delete(ticketId);
+  }
+  renderDetail();
+}
+
+function renderReplyDraft(draft, ticket){
+  if(DRAFT_LOADING.has(ticket.id)){
+    return `<div class="m365-loading"><span class="loader"></span> Generating draft reply…</div>`;
+  }
+  if(!draft){
+    return `<div class="ai-block">
+      <p style="color:var(--ink-dim);font-style:italic;margin-bottom:10px">Generate an AI-drafted reply tailored to this ticket. You review and edit before sending.</p>
+      <button class="btn primary" id="draftReplyBtn" style="width:100%;justify-content:center">⚡ Draft reply with AI</button>
+    </div>`;
+  }
+  if(draft.error){
+    return `<div class="ai-block">
+      <p style="color:var(--danger)">${escape(draft.error)}</p>
+      <button class="btn primary" id="draftReplyBtn" style="width:100%;justify-content:center;margin-top:10px">Try again</button>
+    </div>`;
+  }
+  const reviewClass = draft.needsHumanReview ? "review" : "";
+  return `
+    <div class="reply-block ${reviewClass}">
+      <div class="head">
+        <span class="ttl">Draft reply</span>
+        <span class="conf">${draft.confidence}% confidence · ${escape(draft.rationale||"")}${draft.needsHumanReview?" · NEEDS REVIEW":""}</span>
+      </div>
+      <textarea id="replyText">${escape(draft.reply||"")}</textarea>
+      <div class="ft">
+        <div class="hint">${draft.m365ContextUsed?"✓ M365 context applied · ":""}${draft.similarCount?draft.similarCount+" similar tickets considered":""}</div>
+        <button class="btn ghost" id="regenReplyBtn">↻ Regenerate</button>
+        <button class="btn primary" id="sendReplyBtn">✉ Send reply</button>
+      </div>
+    </div>
+  `;
+}
+
+async function sendReply(ticketId, body, isAutoSend){
+  if(!body || !body.trim()){
+    toast("Reply is empty", "error");
+    return;
+  }
+  try{
+    const res = await fetch("/api/replySend", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ticketId, body, isAutoSend})
+    });
+    if(!res.ok){
+      const errBody = await res.json().catch(()=>({}));
+      throw new Error(errBody.error || "API " + res.status);
+    }
+    toast("Reply sent to requester");
+    DRAFT_REPLIES.delete(ticketId);
+    // Refresh to pull the latest ticket state
+    setTimeout(fetchTickets, 800);
+    renderDetail();
+  }catch(e){
+    toast("Send failed: " + e.message, "error");
+  }
+}
+
+// ============================================================
+// AI TRIAGE
+// ============================================================
+async function runAITriage(ids){
+  const targets = TICKETS.filter(t=>ids.includes(t.id) && !SUMMARIES.has(t.id));
+  if(!targets.length){toast("All selected tickets already have AI summaries");return;}
+  toast(`Running AI triage on ${targets.length} ticket${targets.length>1?"s":""}...`);
+  const BATCH = 5;
+  for(let i=0;i<targets.length;i+=BATCH){
+    const batch = targets.slice(i,i+BATCH);
+    await Promise.all(batch.map(async t=>{
+      try{
+        const result = await summarizeTicket(t);
+        SUMMARIES.set(t.id, result);
+      } catch(err){
+        console.error("AI failed for",t.id,err);
+        SUMMARIES.set(t.id,{summary:"AI summary failed: "+err.message,suggestions:{},resolutions:[],nextAction:"",confidence:"error"});
+      }
+    }));
+    renderList();
+    if(CURRENT_ID && ids.includes(CURRENT_ID)) renderDetail();
+    updateCounts();
+  }
+  toast(`AI triage complete · ${targets.length} ticket${targets.length>1?"s":""}`);
+}
+
+async function summarizeTicket(t){
+  const res = await fetch("/api/aiTriage", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      mode: "summarize",
+      payload: {
+        id: t.id, subject: t.subject, description_text: t.description_text,
+        category: t.category, sub_category: t.sub_category,
+        priority: t.priority, responder_name: t.responder_name,
+        requester_name: t.requester_name
+      }
+    })
+  });
+  if(!res.ok) throw new Error("API "+res.status);
+  const data = await res.json();
+  return data.result;
+}
+
+// ============================================================
+// SIMILAR TICKETS (AI-powered match)
+// ============================================================
+async function findSimilarTickets(ticketId){
+  const t = TICKETS.find(x=>x.id===ticketId);
+  if(!t || !CLOSED_TICKETS.length) return;
+
+  // Pre-filter closed tickets by category match (cheap) to reduce AI workload
+  const candidates = CLOSED_TICKETS
+    .filter(c => c.category === t.category || !t.category)
+    .slice(0, 30); // cap
+
+  if(!candidates.length){
+    SIMILAR.set(ticketId, []);
+    if(CURRENT_ID===ticketId) renderDetail();
+    return;
+  }
+
   try {
-    const decoded = Buffer.from(header, "base64").toString("utf-8");
-    return JSON.parse(decoded);
-  } catch {
+    const res = await fetch("/api/aiTriage", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        mode: "similar",
+        payload: {
+          ticket: { id: t.id, subject: t.subject, description_text: t.description_text, category: t.category, sub_category: t.sub_category },
+          candidates: candidates.map(c => ({ id: c.id, subject: c.subject, description_text: c.description_text, category: c.category, sub_category: c.sub_category, resolution_note: c.resolution_note }))
+        }
+      })
+    });
+    if(!res.ok) throw new Error("API "+res.status);
+    const data = await res.json();
+    const matches = data.result;
+
+    const enriched = matches.map(m => {
+      const ct = CLOSED_TICKETS.find(c=>c.id===m.id);
+      if(!ct) return null;
+      return { id: ct.id, subject: ct.subject, category: ct.category, sub_category: ct.sub_category,
+               resolution: ct.resolution_note, match: m.match, reason: m.reason };
+    }).filter(Boolean);
+
+    SIMILAR.set(ticketId, enriched);
+    if(CURRENT_ID===ticketId) renderDetail();
+  } catch(e){
+    console.error("Similar search failed",e);
+    SIMILAR.set(ticketId, []);
+    if(CURRENT_ID===ticketId) renderDetail();
+  }
+}
+
+// ============================================================
+// STAGED CHANGES
+// ============================================================
+function stageChange(ticket, field, currentValue, newValue, label){
+  // remove existing for same ticket+field
+  STAGED = STAGED.filter(s=>!(s.ticketId===ticket.id && s.field===field));
+  STAGED.push({
+    ticketId: ticket.id,
+    ticketSubject: ticket.subject,
+    field, label,
+    currentValue, newValue
+  });
+  updateCounts();
+  renderStagedPanel();
+  toast(`Staged: ${label} change for #${ticket.id}`);
+}
+
+function unstageChange(ticketId, field){
+  STAGED = STAGED.filter(s=>!(s.ticketId===ticketId && s.field===field));
+  updateCounts();
+  renderStagedPanel();
+  if(CURRENT_ID===ticketId) renderDetail();
+}
+
+function renderStagedPanel(){
+  const host = $("#stagedBody");
+  if(!STAGED.length){
+    host.innerHTML = `<div class="staged-empty">
+      <div style="font-family:var(--display);font-size:32px;font-style:italic;color:var(--ink-ghost);margin-bottom:8px">Empty queue</div>
+      <div>Stage AI-suggested changes or quick actions to review them here before applying via MCP.</div>
+    </div>`;
+    return;
+  }
+  // group by ticket
+  const byTicket = {};
+  STAGED.forEach(s=>{(byTicket[s.ticketId]=byTicket[s.ticketId]||{subj:s.ticketSubject,items:[]}).items.push(s);});
+  host.innerHTML = Object.entries(byTicket).map(([tid,{subj,items}])=>`
+    <div class="staged-item">
+      <div class="si-hd">
+        <span class="si-tid">#${tid}</span>
+        <button class="si-rm" data-rm-ticket="${tid}" title="Remove all for this ticket">×</button>
+      </div>
+      <div class="si-subj">${escape(subj||"")}</div>
+      ${items.map(s=>`
+        <div class="si-change">
+          <strong>${escape(s.label)}</strong>
+          <span class="arrow">${escape(s.currentValue)} →</span>
+          <span class="new">${escape(s.newValue)}</span>
+          <button class="si-rm" data-rm-field="${s.field}" data-rm-tid="${tid}" style="float:right">×</button>
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
+
+  host.querySelectorAll("[data-rm-ticket]").forEach(b=>b.addEventListener("click",()=>{
+    const tid = parseInt(b.dataset.rmTicket);
+    STAGED = STAGED.filter(s=>s.ticketId !== tid);
+    updateCounts(); renderStagedPanel(); if(CURRENT_ID===tid) renderDetail();
+  }));
+  host.querySelectorAll("[data-rm-field]").forEach(b=>b.addEventListener("click",()=>{
+    unstageChange(parseInt(b.dataset.rmTid), b.dataset.rmField);
+  }));
+}
+
+async function applyStaged(){
+  if(!STAGED.length){toast("Nothing to apply");return;}
+
+  // Group by ticket for the API payload
+  const byTicket = {};
+  STAGED.forEach(s=>{
+    (byTicket[s.ticketId] = byTicket[s.ticketId] || {fields:{}}).fields[s.field] = s.newValue;
+  });
+
+  const changes = Object.entries(byTicket).map(([ticketId, {fields}])=>({
+    ticketId: parseInt(ticketId), fields
+  }));
+
+  const btn = $("#applyStagedBtn");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader"></span> Applying...';
+
+  try{
+    const res = await fetch("/api/applyChanges",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({changes})
+    });
+    if(!res.ok) throw new Error("API "+res.status);
+    const data = await res.json();
+    const results = data.results || [];
+    const okCount = results.filter(r=>r.ok).length;
+    const failCount = results.length - okCount;
+
+    if(failCount === 0){
+      toast(`Applied ${okCount} change${okCount===1?"":"s"} to Freshservice`);
+      STAGED = [];
+      updateCounts(); renderStagedPanel(); if(CURRENT_ID) renderDetail();
+      setTimeout(fetchTickets, 800);
+    } else {
+      const failed = results.filter(r=>!r.ok);
+      toast(`${okCount} applied, ${failCount} failed — see console`, "error");
+      console.error("Failed changes:", failed);
+      const okIds = new Set(results.filter(r=>r.ok).map(r=>r.ticketId));
+      STAGED = STAGED.filter(s=>!okIds.has(s.ticketId));
+      updateCounts(); renderStagedPanel();
+      setTimeout(fetchTickets, 800);
+    }
+  }catch(e){
+    toast("Apply failed: "+e.message,"error");
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+// ============================================================
+// QUICK ACTIONS (now stage to queue instead of immediate copy)
+// ============================================================
+function handleQuickAction(action, t){
+  switch(action){
+    case "assign-me":
+      stageChange(t, "responder_name", t.responder_name||"unassigned", "Nathan Maharg", "Assignee");
+      break;
+    case "set-pending":
+      stageChange(t, "status", STATUS_MAP[t.status], "Pending", "Status");
+      break;
+    case "resolve":
+      stageChange(t, "status", STATUS_MAP[t.status], "Resolved", "Status");
+      break;
+    case "close":
+      stageChange(t, "status", STATUS_MAP[t.status], "Closed", "Status");
+      break;
+    case "teams":
+      openTeamsModal(t);
+      return;
+  }
+  renderDetail();
+}
+
+// ============================================================
+// TEAMS HAND-OFF
+// ============================================================
+function openTeamsModal(t){
+  TEAMS_HANDOFF_CONTEXT = t;
+  $("#teamsOutput").textContent = "Select a recipient above to generate the message.";
+  $$("#agentSelect button").forEach(b=>b.classList.remove("active"));
+  $("#teamsModal").classList.add("open");
+}
+
+function generateTeamsMessage(agent){
+  const t = TEAMS_HANDOFF_CONTEXT;
+  if(!t) return "";
+  const sum = SUMMARIES.get(t.id);
+  const greeting = agent.startsWith("Channel") ? "Team," : `Hey ${agent.split(" ")[0]},`;
+  const fsUrl = `(link to ticket in Freshservice)`;
+
+  let msg = `${greeting} can you take a look at this one?\n\n`;
+  msg += `**🎫 Ticket #${t.id} — ${t.subject}**\n\n`;
+  msg += `| | |\n|---|---|\n`;
+  msg += `| **Requester** | ${t.requester_name||"Unknown"} |\n`;
+  msg += `| **Priority** | ${PRIO_MAP[t.priority]||"?"} |\n`;
+  msg += `| **Category** | ${t.category||"—"}${t.sub_category?" / "+t.sub_category:""} |\n`;
+  msg += `| **Age** | ${formatAge(t.created_at)} |\n`;
+  msg += `| **SLA** | ${t.due_by ? (new Date(t.due_by)<new Date() ? "⚠️ Breached" : "Due "+new Date(t.due_by).toLocaleString()) : "—"} |\n\n`;
+
+  if(sum){
+    msg += `**🧠 Summary**\n> ${sum.summary}\n\n`;
+    if(sum.nextAction){
+      msg += `**👉 Recommended next action**\n> ${sum.nextAction}\n\n`;
+    }
+    if(sum.resolutions && sum.resolutions.length){
+      msg += `**🔧 Likely resolution steps**\n`;
+      sum.resolutions.forEach((r,i)=>{ msg += `${i+1}. ${r}\n`; });
+      msg += `\n`;
+    }
+  } else {
+    msg += `**Original message**\n> ${(t.description_text||"").slice(0,400)}${(t.description_text||"").length>400?"...":""}\n\n`;
+  }
+
+  msg += `Ticket: ${fsUrl}\n\nThanks! — Nathan`;
+  return msg;
+}
+
+// ============================================================
+// SAVED VIEWS
+// ============================================================
+async function loadSavedViews(){
+  const v = await storeGet("saved_views");
+  SAVED_VIEWS = v || [];
+  renderSavedViews();
+}
+
+function renderSavedViews(){
+  const host = $("#savedViewsList");
+  if(!SAVED_VIEWS.length){
+    host.innerHTML = `<div style="font-size:10px;color:var(--ink-ghost);font-style:italic;padding:6px 10px">No saved views yet</div>`;
+    return;
+  }
+  host.innerHTML = SAVED_VIEWS.map(v=>`
+    <div class="view-item" data-view="${v.id}">
+      <span style="color:var(--accent)">▸</span>
+      <span class="vi-name">${escape(v.name)}</span>
+      <button class="vi-del" data-del-view="${v.id}">×</button>
+    </div>
+  `).join("");
+  host.querySelectorAll("[data-view]").forEach(el=>el.addEventListener("click",e=>{
+    if(e.target.closest(".vi-del")) return;
+    const v = SAVED_VIEWS.find(x=>x.id===el.dataset.view);
+    if(v){
+      FILTERS = {...FILTERS, ...v.filters};
+      syncFilterUI();
+      updateCounts(); renderList();
+      toast(`Loaded view: ${v.name}`);
+    }
+  }));
+  host.querySelectorAll("[data-del-view]").forEach(b=>b.addEventListener("click",async e=>{
+    e.stopPropagation();
+    SAVED_VIEWS = SAVED_VIEWS.filter(v=>v.id!==b.dataset.delView);
+    await storeSet("saved_views", SAVED_VIEWS);
+    renderSavedViews();
+  }));
+}
+
+function syncFilterUI(){
+  $$("[data-scope]").forEach(b=>b.classList.toggle("active", b.dataset.scope===FILTERS.scope));
+  $$("[data-status]").forEach(b=>b.classList.toggle("active", b.dataset.status===FILTERS.status));
+  $$("[data-prio]").forEach(b=>b.classList.toggle("active", b.dataset.prio===FILTERS.prio));
+  $$("[data-aging]").forEach(b=>b.classList.toggle("active", b.dataset.aging===FILTERS.aging));
+  $$("[data-group]").forEach(b=>b.classList.toggle("active", b.dataset.group===FILTERS.group));
+  $("#searchInput").value = FILTERS.search;
+}
+
+async function saveCurrentView(name){
+  const v = {
+    id: "v_"+Date.now(),
+    name,
+    filters: {...FILTERS}
+  };
+  SAVED_VIEWS.push(v);
+  await storeSet("saved_views", SAVED_VIEWS);
+  renderSavedViews();
+  toast(`Saved view: ${name}`);
+}
+
+// ============================================================
+// STANDUP MODE
+// ============================================================
+async function renderStandup(){
+  const host = $("#mainStandup");
+  const lastSeen = await storeGet("last_seen_ts");
+
+  // Only count ACTIVE tickets (open=2, pending=3, hold=6)
+  const ACTIVE_STATUSES = new Set([2, 3, 6]);
+  const activeTickets = TICKETS.filter(t => ACTIVE_STATUSES.has(t.status));
+
+  const newSince = lastSeen
+    ? activeTickets.filter(t => new Date(t.created_at) > new Date(lastSeen))
+    : [];
+  const breached = activeTickets.filter(t => t.due_by && new Date(t.due_by) < new Date() && isMine(t));
+  const atRisk = activeTickets.filter(t => {
+    if(!isMine(t) || !t.due_by) return false;
+    const ms = new Date(t.due_by) - Date.now();
+    return ms > 0 && ms < 4 * 3600000;
+  });
+  const urgent = activeTickets.filter(t => isMine(t) && t.priority === 4);
+  const stale = activeTickets.filter(t => isMine(t) && ageHours(t.created_at) > 168);
+  const myOpen = activeTickets.filter(isMine);
+  const unassigned = activeTickets.filter(t => !t.responder_name);
+
+  // Team breakdown
+  const steveOpen = activeTickets.filter(t => t.responder_name?.toLowerCase().includes("steve")).length;
+  const ericOpen = activeTickets.filter(t => t.responder_name?.toLowerCase().includes("eric")).length;
+
+  const today = new Date().toLocaleDateString(undefined, {weekday:"long", year:"numeric", month:"long", day:"numeric"});
+  const last = lastSeen ? new Date(lastSeen).toLocaleString() : "first visit";
+
+  // Get first name from principal
+  const firstName = ME?.name?.split(" ")[0] || ME?.email?.split("@")[0] || "there";
+
+  const queueHost = '<div id="aiQueueHost"><div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:11px"><span class="loader"></span> Generating AI priority queue...</div></div>';
+
+  host.innerHTML = `
+    <div class="standup-card">
+      <h2>Good ${getTimeOfDay()}, ${firstName}</h2>
+      <div class="sub">${today} · Last visit: ${last}</div>
+      <div class="standup-row"><span class="lbl">New since last visit</span><span class="val ${newSince.length>0?"warn":"ok"}">${newSince.length}</span></div>
+      <div class="standup-row"><span class="lbl">My active tickets</span><span class="val">${myOpen.length}</span></div>
+      <div class="standup-row"><span class="lbl">SLA breached</span><span class="val ${breached.length>0?"alert":"ok"}">${breached.length}</span></div>
+      <div class="standup-row"><span class="lbl">At risk (&lt; 4h to SLA)</span><span class="val ${atRisk.length>0?"warn":"ok"}">${atRisk.length}</span></div>
+      <div class="standup-row"><span class="lbl">Stale (&gt; 7d, no update)</span><span class="val ${stale.length>0?"warn":"ok"}">${stale.length}</span></div>
+      <div class="standup-row"><span class="lbl">Unassigned</span><span class="val ${unassigned.length>0?"warn":""}">${unassigned.length}</span></div>
+    </div>
+
+    <div class="standup-card">
+      <h2>Team snapshot</h2>
+      <div class="sub">active tickets by agent · click to filter</div>
+      <div class="standup-row" data-standup-filter="Nathan Maharg" style="cursor:pointer" onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
+        <span class="lbl" style="display:flex;align-items:center;gap:6px">
+          <span style="width:22px;height:22px;border-radius:50%;background:rgba(99,102,241,0.2);color:#6366f1;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">NM</span>
+          Nathan Maharg
+        </span>
+        <span class="val">${myOpen.length}</span>
+      </div>
+      <div class="standup-row" data-standup-filter="Steve Mitchell" style="cursor:pointer" onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
+        <span class="lbl" style="display:flex;align-items:center;gap:6px">
+          <span style="width:22px;height:22px;border-radius:50%;background:rgba(74,222,128,0.2);color:#4ade80;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">SM</span>
+          Steve Mitchell
+        </span>
+        <span class="val">${steveOpen}</span>
+      </div>
+      <div class="standup-row" data-standup-filter="Eric Hnatov" style="cursor:pointer" onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
+        <span class="lbl" style="display:flex;align-items:center;gap:6px">
+          <span style="width:22px;height:22px;border-radius:50%;background:rgba(251,191,36,0.2);color:#fbbf24;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">EH</span>
+          Eric Hnatov
+        </span>
+        <span class="val">${ericOpen}</span>
+      </div>
+      <div class="standup-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <span class="lbl">Total active queue</span>
+        <span class="val">${activeTickets.length}</span>
+      </div>
+    </div>
+
+    <div class="standup-card">
+      <h2>What changed</h2>
+      <div class="sub">new active tickets since your last visit</div>
+      ${newSince.length === 0
+        ? `<div style="color:var(--ink-ghost);font-size:12px;font-style:italic;padding:8px 0">No new tickets since you were last here. ☕</div>`
+        : `<div class="standup-list">${newSince.slice(0,8).map((t,i)=>renderStandupItem(t,i+1,"NEW")).join("")}</div>`
+      }
+    </div>
+
+    <div class="standup-card">
+      <h2>Needs attention</h2>
+      <div class="sub">urgent + high priority active tickets</div>
+      ${urgent.length === 0
+        ? `<div style="color:var(--ink-ghost);font-size:12px;font-style:italic;padding:8px 0">No urgent tickets right now. 🎉</div>`
+        : `<div class="standup-list">${urgent.slice(0,6).map((t,i)=>renderStandupItem(t,i+1,"URGENT")).join("")}</div>`
+      }
+    </div>
+
+    <div class="standup-card wide">
+      <h2>Today's AI-prioritized queue</h2>
+      <div class="sub">what to tackle first, based on urgency, SLA risk, and impact</div>
+      ${queueHost}
+    </div>
+  `;
+
+  // wire row clicks
+  host.querySelectorAll(".si").forEach(el => el.addEventListener("click", () => {
+    const id = parseInt(el.dataset.tid);
+    switchMode("triage");
+    selectTicket(id);
+  }));
+
+  // generate AI priority queue
+  const candidates = [...breached, ...atRisk, ...urgent, ...stale, ...myOpen]
+    .filter((t,i,a) => a.findIndex(x => x.id === t.id) === i)
+    .slice(0, 15);
+
+  if(candidates.length){
+    try{
+      const queue = await generateAIQueue(candidates);
+      const qhost = $("#aiQueueHost");
+      if(qhost && queue.length){
+        qhost.innerHTML = `<div class="standup-list">${queue.map((q,i) => {
+          const t = TICKETS.find(x => x.id === q.id);
+          if(!t) return "";
+          return `<div class="si" data-tid="${t.id}">
+            <div class="si-num">${i+1}</div>
+            <div class="si-body">
+              <div class="subj">${escape(t.subject)}</div>
+              <div class="why"><strong style="color:var(--accent);font-style:normal">Why first:</strong> ${escape(q.reason)}</div>
+              <div class="meta">#${t.id} · ${escape(t.requester_name||"unknown")} · ${formatAge(t.created_at)} old</div>
+            </div>
+            <span class="pill ${PRIO_CLASS[t.priority]||""} si-prio">${PRIO_MAP[t.priority]||"?"}</span>
+          </div>`;
+        }).join("")}</div>`;
+        qhost.querySelectorAll(".si").forEach(el => el.addEventListener("click", () => {
+          switchMode("triage");
+          selectTicket(parseInt(el.dataset.tid));
+        }));
+      } else if(qhost){
+        qhost.innerHTML = `<div style="color:var(--ink-ghost);font-style:italic;padding:8px 0;font-size:12px">Nothing urgent on your plate right now. 🎉</div>`;
+      }
+    } catch(e){
+      console.error(e);
+      const qhost = $("#aiQueueHost");
+      if(qhost) qhost.innerHTML = `<div style="color:var(--danger);font-size:11px">AI queue unavailable: ${escape(e.message)}</div>`;
+    }
+  } else {
+    const qhost = $("#aiQueueHost");
+    if(qhost) qhost.innerHTML = `<div style="color:var(--ink-ghost);font-style:italic;padding:8px 0;font-size:12px">No tickets need your attention right now. 🎉</div>`;
+  }
+
+  // mark this as the new "last seen"
+  LAST_SEEN_TIMESTAMP = new Date().toISOString();
+  await storeSet("last_seen_ts", LAST_SEEN_TIMESTAMP);
+}
+
+function renderStandupItem(t, n, badge){
+  return `<div class="si" data-tid="${t.id}">
+    <div class="si-num">${n}</div>
+    <div class="si-body">
+      <div class="subj">${escape(t.subject)}</div>
+      <div class="why">${escape(t.requester_name||"Unknown")} · ${escape(t.category||"—")}${t.sub_category?" / "+escape(t.sub_category):""}</div>
+      <div class="meta">#${t.id} · ${formatAge(t.created_at)} old</div>
+    </div>
+    <span class="pill ${PRIO_CLASS[t.priority]||""} si-prio">${PRIO_MAP[t.priority]||"?"}</span>
+  </div>`;
+}
+
+function getTimeOfDay(){
+  const h = new Date().getHours();
+  if(h<12) return "morning";
+  if(h<17) return "afternoon";
+  return "evening";
+}
+
+async function generateAIQueue(candidates){
+  const res = await fetch("/api/aiTriage", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      mode: "queue",
+      payload: {
+        candidates: candidates.map(t=>({
+          id: t.id, subject: t.subject, description_text: t.description_text,
+          priority: t.priority, status: t.status, requester_name: t.requester_name,
+          due_by: t.due_by, responder_name: t.responder_name
+        }))
+      }
+    })
+  });
+  if(!res.ok) throw new Error("API "+res.status);
+  const data = await res.json();
+  return data.result;
+}
+
+// ============================================================
+// PATTERN DETECTION
+// ============================================================
+async function detectPatterns(){
+  if(TICKETS.length < 3){
+    PATTERNS = [];
+    renderPatterns();
+    updateCounts();
+    return;
+  }
+  const host = $("#mainPatterns");
+  host.innerHTML = `<div style="padding:40px;text-align:center;color:var(--ink-dim)"><span class="loader"></span> Analyzing patterns across ${TICKETS.length} tickets...</div>`;
+
+  try{
+    const res = await fetch("/api/aiTriage", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        mode: "patterns",
+        payload: {
+          tickets: TICKETS.map(t=>({
+            id: t.id, subject: t.subject, description_text: t.description_text,
+            category: t.category, sub_category: t.sub_category,
+            priority: t.priority, requester_name: t.requester_name
+          }))
+        }
+      })
+    });
+    if(!res.ok) throw new Error("API "+res.status);
+    const data = await res.json();
+    PATTERNS = data.result;
+    renderPatterns();
+    updateCounts();
+    renderList(); // re-render to add cluster pills
+  }catch(e){
+    console.error(e);
+    host.innerHTML = `<div style="padding:40px;color:var(--danger)">Pattern analysis failed: ${escape(e.message)}</div>`;
+  }
+}
+
+function renderPatterns(){
+  const host = $("#mainPatterns");
+  if(!PATTERNS.length){
+    host.innerHTML = `<div class="empty-state" style="padding:80px 20px">
+      <div class="big">No patterns detected</div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">Either everything's isolated, or you need more tickets loaded.</div>
+      <button class="btn primary" id="rerunPatternsBtn" style="margin-top:20px">↻ Re-analyze</button>
+    </div>`;
+    const b = $("#rerunPatternsBtn");
+    if(b) b.addEventListener("click",detectPatterns);
+    return;
+  }
+  host.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding:0 4px">
+      <div>
+        <div style="font-family:var(--display);font-size:24px;font-style:italic;font-weight:600">Detected patterns</div>
+        <div style="font-size:11px;color:var(--ink-dim);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px">${PATTERNS.length} cluster${PATTERNS.length===1?"":"s"} found across ${TICKETS.length} open tickets</div>
+      </div>
+      <button class="btn" id="rerunPatternsBtn">↻ Re-analyze</button>
+    </div>
+    ${PATTERNS.map(p=>`
+      <div class="pattern-card ${p.severity||"low"}">
+        <div class="pc-sev">${(p.severity||"low").toUpperCase()} SEVERITY · ${p.ticketIds.length} tickets · ${escape(p.tag)}</div>
+        <h3>${escape(p.title)}</h3>
+        <div class="pc-desc">${escape(p.description)}</div>
+        <div class="pc-recommend"><strong style="color:var(--accent);text-transform:uppercase;font-size:10px;letter-spacing:1.5px">Recommendation</strong><br>${escape(p.recommendation)}</div>
+        <div class="pc-tickets">
+          ${p.ticketIds.map(id=>{
+            const t = TICKETS.find(x=>x.id===id);
+            if(!t) return `<span class="pc-ticket">#${id}</span>`;
+            return `<span class="pc-ticket" data-tid="${id}">#${id} — ${escape((t.subject||"").slice(0,40))}${(t.subject||"").length>40?"...":""}</span>`;
+          }).join("")}
+        </div>
+      </div>
+    `).join("")}
+  `;
+  host.querySelectorAll("[data-tid]").forEach(el=>el.addEventListener("click",()=>{
+    switchMode("triage");
+    selectTicket(parseInt(el.dataset.tid));
+  }));
+  const b = $("#rerunPatternsBtn");
+  if(b) b.addEventListener("click",detectPatterns);
+}
+
+// ============================================================
+// MODE SWITCHING
+// ============================================================
+function switchMode(mode){
+  CURRENT_MODE = mode;
+  $$(".modetab").forEach(t=>t.classList.toggle("active", t.dataset.mode===mode));
+  $("#mainTriage").classList.toggle("hidden", mode!=="triage");
+  $("#mainStandup").classList.toggle("hidden", mode!=="standup");
+  $("#mainPatterns").classList.toggle("hidden", mode!=="patterns");
+  if(mode==="standup") renderStandup();
+  if(mode==="patterns" && !PATTERNS.length) detectPatterns();
+}
+
+// ============================================================
+// DATA LOADING
+// ============================================================
+function normalizeTicket(t){
+  return {
+    id: t.id,
+    subject: t.subject||"",
+    description_text: t.description_text || stripHtml(t.description||""),
+    status: t.status||2,
+    priority: t.priority||2,
+    requester_id: t.requester_id,
+    requester_name: t.requester_name || (t.requester && (t.requester.name || t.requester.email)) || null,
+    responder_id: t.responder_id,
+    responder_name: t.responder_name || (t.responder && t.responder.name) || null,
+    category: t.category||"",
+    sub_category: t.sub_category||"",
+    item_category: t.item_category||"",
+    group_name: t.group_name || (t.group && t.group.name) || "",
+    created_at: t.created_at,
+    updated_at: t.updated_at,
+    due_by: t.due_by,
+    resolution_note: t.resolution_note || ""
+  };
+}
+function stripHtml(s){return String(s||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();}
+
+async function fetchTickets({silent=false}={}){
+  if(!silent) toast("Fetching tickets...");
+  try{
+    setConn("Fs", "fetching…", "ghost");
+    const res = await fetch("/api/tickets?includeClosed=true");
+    if(res.status === 401){
+      // Session expired — redirect to login
+      window.location.href = "/.auth/login/aad?post_login_redirect_uri=" + encodeURIComponent(window.location.pathname);
+      return;
+    }
+    if(!res.ok) throw new Error("API "+res.status);
+    const data = await res.json();
+    TICKETS = (data.open || []).map(normalizeTicket);
+    CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
+    LAST_FETCH = data.fetchedAt;
+    const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
+    setConn("Fs", `connected · ${activeCount} active`, "ok");
+    setConn("Ai", "ready", "ok");
+    setConn("Last", new Date(LAST_FETCH).toLocaleTimeString(), "ok");
+    // Preserve current selection if the ticket still exists
+    if(CURRENT_ID && !TICKETS.find(t=>t.id===CURRENT_ID)) CURRENT_ID = null;
+    // Drop cached v3 state for tickets that closed/were removed
+    const openIds = new Set(TICKETS.map(t=>t.id));
+    for(const id of M365_CONTEXT.keys()) if(!openIds.has(id)) M365_CONTEXT.delete(id);
+    for(const id of PROVISIONING.keys()) if(!openIds.has(id)) PROVISIONING.delete(id);
+    for(const id of DRAFT_REPLIES.keys()) if(!openIds.has(id)) DRAFT_REPLIES.delete(id);
+    LAST_SEEN_TIMESTAMP = await storeGet("last_seen_ts");
+    updateCounts(); renderList(); renderDetail(); renderStagedPanel();
+    if(!silent) toast(`Loaded ${TICKETS.length} open · ${CLOSED_TICKETS.length} closed`);
+  } catch(e){
+    setConn("Fs", "error: "+e.message, "alert");
+    toast("Fetch failed: "+e.message,"error");
+  }
+}
+
+// Used by the connection-status modal
+let LAST_FETCH = null;
+function setConn(id, text, level){
+  const dotMap = {ok:"var(--ok)", alert:"var(--danger)", ghost:"var(--ink-ghost)", warn:"var(--warn)"};
+  const textEl = document.getElementById("conn"+id);
+  const dotEl = document.getElementById("conn"+id+"Dot");
+  if(textEl) textEl.textContent = text;
+  if(dotEl) dotEl.style.background = dotMap[level] || "var(--ink-ghost)";
+  if(id === "Last"){
+    const e = document.getElementById("connLast");
+    if(e) e.textContent = text;
+  }
+}
+
+async function loadPrincipal(){
+  try{
+    const res = await fetch("/.auth/me");
+    if(!res.ok) return null;
+    const data = await res.json();
+    const principal = data.clientPrincipal;
+    if(principal){
+      const name = principal.userDetails || "Signed in";
+      $("#agentName").textContent = name.toUpperCase();
+      const initials = name.split(/[ @.]/).filter(Boolean).slice(0,2).map(s=>s[0].toUpperCase()).join("");
+      $("#userInitials").textContent = initials || "·";
+      setConn("Id", name, "ok");
+    } else {
+      setConn("Id", "not signed in", "alert");
+    }
+    return principal;
+  } catch(e){
+    setConn("Id", "error", "alert");
     return null;
   }
 }
 
-function isInItTeam(principal) {
-  if (!principal) return false;
-  const roles = principal.userRoles || [];
-  return roles.includes("itteam") || roles.includes("it-team");
-}
+// ============================================================
+// MODAL HELPERS
+// ============================================================
+function openModal(id){$("#"+id).classList.add("open")}
+function closeModal(id){$("#"+id).classList.remove("open")}
 
-async function fsRequest(path, options = {}) {
-  const apiKey = await getSecret("FRESHSERVICE-API-KEY");
-  const auth = Buffer.from(`${apiKey}:X`).toString("base64");
-  const url = `https://${FS_DOMAIN}/api/v2${path}`;
-  const res = await fetch(url, {
-    method: options.method || "GET",
-    headers: {
-      "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    body: options.body
+// ============================================================
+// WIRING
+// ============================================================
+$$(".modetab").forEach(b=>b.addEventListener("click",()=>switchMode(b.dataset.mode)));
+
+$$("[data-scope]").forEach(b=>b.addEventListener("click",()=>{
+  $$("[data-scope]").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); FILTERS.scope = b.dataset.scope; updateCounts(); renderList();
+}));
+$$("[data-status]").forEach(b=>b.addEventListener("click",()=>{
+  $$("[data-status]").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); FILTERS.status = b.dataset.status; updateCounts(); renderList();
+}));
+$$("[data-prio]").forEach(b=>b.addEventListener("click",()=>{
+  $$("[data-prio]").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); FILTERS.prio = b.dataset.prio; updateCounts(); renderList();
+}));
+$$("[data-aging]").forEach(b=>b.addEventListener("click",()=>{
+  $$("[data-aging]").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); FILTERS.aging = b.dataset.aging; updateCounts(); renderList();
+}));
+$$("[data-group]").forEach(b=>b.addEventListener("click",()=>{
+  $$("[data-group]").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); FILTERS.group = b.dataset.group; renderList();
+}));
+$("#searchInput").addEventListener("input",e=>{FILTERS.search = e.target.value; updateCounts(); renderList();});
+
+$("#refreshBtn").addEventListener("click",()=>fetchTickets());
+$("#openDataBtn") && $("#openDataBtn").addEventListener("click",()=>openModal("dataModal"));
+$("#userMenuBtn").addEventListener("click",()=>openModal("dataModal"));
+$$("[data-close]").forEach(b=>b.addEventListener("click",()=>closeModal(b.dataset.close)));
+$("#forceRefreshBtn") && $("#forceRefreshBtn").addEventListener("click",()=>{fetchTickets();closeModal("dataModal");});
+
+$("#selectAllBtn").addEventListener("click",()=>{
+  const visible = applyFilters();
+  const allSel = visible.every(t=>SELECTED_IDS.has(t.id));
+  if(allSel) visible.forEach(t=>SELECTED_IDS.delete(t.id));
+  else visible.forEach(t=>SELECTED_IDS.add(t.id));
+  updateSelCount(); renderList();
+});
+$("#bulkSummarizeBtn").addEventListener("click",()=>runAITriage([...SELECTED_IDS]));
+$("#bulkAiBtn").addEventListener("click",()=>{
+  const visible = applyFilters();
+  if(!visible.length){toast("No visible tickets to summarize");return;}
+  runAITriage(visible.map(t=>t.id));
+});
+
+// Staged panel
+$("#openStagedBtn").addEventListener("click",()=>{$("#stagedPanel").classList.add("open"); renderStagedPanel();});
+$("#closeStagedBtn").addEventListener("click",()=>$("#stagedPanel").classList.remove("open"));
+$("#clearStagedBtn").addEventListener("click",()=>{
+  if(!STAGED.length){return;}
+  STAGED = []; updateCounts(); renderStagedPanel(); if(CURRENT_ID) renderDetail();
+  toast("Staged queue cleared");
+});
+$("#applyStagedBtn").addEventListener("click",applyStaged);
+
+// Saved views
+$("#saveViewBtn").addEventListener("click",()=>{
+  $("#viewNameInput").value = "";
+  $("#viewPreview").innerHTML = `
+    <div style="color:var(--ink-ghost);text-transform:uppercase;letter-spacing:1px;font-size:10px;margin-bottom:6px">Current filters</div>
+    Scope: <span style="color:var(--accent)">${FILTERS.scope}</span><br>
+    Status: <span style="color:var(--accent)">${FILTERS.status}</span><br>
+    Priority: <span style="color:var(--accent)">${FILTERS.prio}</span><br>
+    Group by: <span style="color:var(--accent)">${FILTERS.group}</span><br>
+    Search: <span style="color:var(--accent)">${FILTERS.search||"(none)"}</span>
+  `;
+  openModal("saveViewModal");
+});
+$("#confirmSaveViewBtn").addEventListener("click",async ()=>{
+  const name = $("#viewNameInput").value.trim();
+  if(!name){toast("Name required","error");return;}
+  await saveCurrentView(name);
+  closeModal("saveViewModal");
+});
+
+// Teams modal
+$$("#agentSelect button").forEach(b=>b.addEventListener("click",()=>{
+  $$("#agentSelect button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  $("#teamsOutput").textContent = generateTeamsMessage(b.dataset.agent);
+}));
+$("#copyTeamsBtn").addEventListener("click",()=>{
+  const txt = $("#teamsOutput").textContent;
+  if(!txt || txt.startsWith("Select")) {toast("Pick a recipient first","error");return;}
+  navigator.clipboard.writeText(txt).then(()=>{
+    toast("Teams message copied · paste into a chat or channel");
+    closeModal("teamsModal");
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Freshservice ${res.status}: ${text.slice(0, 300)}`);
+});
+
+// ============================================================
+// V3: AUTO-REPLY SETTINGS
+// ============================================================
+async function loadAutoReplySettings(){
+  try{
+    const res = await fetch("/api/settingsAutoReply");
+    if(!res.ok) throw new Error("API " + res.status);
+    AUTO_REPLY_SETTINGS = await res.json();
+  }catch(e){
+    toast("Could not load settings: " + e.message, "error");
+    AUTO_REPLY_SETTINGS = {globalEnabled:false, defaultThreshold:85, categories:{}, blockedCategories:[], blockedKeywords:[]};
   }
-  return res.json();
+  renderSettingsModal();
 }
 
-async function fsGetAllOpenTickets() {
-  const data = await fsRequest(`/tickets?per_page=100`);
-  return data.tickets || [];
+function renderSettingsModal(){
+  const s = AUTO_REPLY_SETTINGS;
+  if(!s){return;}
+  const cats = Object.entries(s.categories || {});
+
+  $("#settingsBody").innerHTML = `
+    <div class="ars-section">
+      <label class="ars-toggle">
+        <input type="checkbox" id="ars-global" ${s.globalEnabled?"checked":""}/>
+        <span>
+          <strong>Global auto-reply</strong>
+          <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">Master switch. When off, all categories below stay in draft-only mode regardless of their individual setting.</div>
+        </span>
+      </label>
+    </div>
+
+    <div class="ars-section">
+      <div style="font-size:12px;color:var(--ink);margin-bottom:8px"><strong>Default confidence threshold</strong></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="range" id="ars-default-threshold" min="60" max="100" value="${s.defaultThreshold}" style="flex:1"/>
+        <span id="ars-default-threshold-val" style="font-family:var(--display);font-size:22px;font-weight:600;color:var(--accent);min-width:50px;text-align:right">${s.defaultThreshold}%</span>
+      </div>
+      <div style="font-size:11px;color:var(--ink-dim);margin-top:6px">Per-category thresholds below override this. Lower = more auto-replies but more risk of misfires.</div>
+    </div>
+
+    <div class="ars-section">
+      <div style="font-size:12px;color:var(--ink);margin-bottom:8px"><strong>Categories</strong></div>
+      <div style="font-size:11px;color:var(--ink-dim);margin-bottom:10px">Each category opts in independently. Drafts always work; the toggle controls whether high-confidence drafts auto-send without your review.</div>
+      <div id="ars-cat-list">
+        ${cats.length === 0 ? '<div style="font-size:11px;color:var(--ink-ghost);font-style:italic;padding:8px 0">No categories configured yet. Add one below.</div>' :
+          cats.map(([name,c])=>`
+            <div class="ars-cat" data-cat-name="${escape(name)}">
+              <span class="name">${escape(name)}</span>
+              <label class="ars-toggle">
+                <input type="checkbox" class="ars-cat-enabled" ${c.enabled?"checked":""}/>
+              </label>
+              <input type="number" class="ars-cat-threshold" min="60" max="100" value="${c.threshold||s.defaultThreshold}"/>
+            </div>
+          `).join("")}
+      </div>
+      <div class="ars-add">
+        <input type="text" id="ars-new-cat" placeholder="New category (e.g., Software/AI Tools)"/>
+        <button class="btn" id="ars-add-cat">+ Add</button>
+      </div>
+    </div>
+
+    <div class="ars-section">
+      <div style="font-size:12px;color:var(--ink);margin-bottom:8px"><strong>Always require human review</strong></div>
+      <div style="font-size:11px;color:var(--ink-dim);margin-bottom:8px">Categories on this list NEVER auto-send, even on high confidence.</div>
+      <div class="ars-blocked-list" id="ars-blocked-cats">
+        ${(s.blockedCategories||[]).map(c=>`<span class="tag">${escape(c)} <button data-blocked-cat="${escape(c)}">×</button></span>`).join("")}
+      </div>
+      <div class="ars-add" style="margin-top:8px">
+        <input type="text" id="ars-new-blocked-cat" placeholder="Add category to block"/>
+        <button class="btn" id="ars-add-blocked-cat">+ Add</button>
+      </div>
+    </div>
+
+    <div class="ars-section">
+      <div style="font-size:12px;color:var(--ink);margin-bottom:8px"><strong>Blocked keywords</strong></div>
+      <div style="font-size:11px;color:var(--ink-dim);margin-bottom:8px">If a ticket contains any of these words, AI drops to draft mode regardless of category settings.</div>
+      <div class="ars-blocked-list" id="ars-blocked-kw">
+        ${(s.blockedKeywords||[]).map(k=>`<span class="tag">${escape(k)} <button data-blocked-kw="${escape(k)}">×</button></span>`).join("")}
+      </div>
+      <div class="ars-add" style="margin-top:8px">
+        <input type="text" id="ars-new-blocked-kw" placeholder="Add keyword"/>
+        <button class="btn" id="ars-add-blocked-kw">+ Add</button>
+      </div>
+    </div>
+
+    ${s.lastModifiedBy ? `<div style="font-size:10px;color:var(--ink-ghost);text-align:right;padding-top:8px">Last modified by ${escape(s.lastModifiedBy)} · ${s.lastModifiedAt?new Date(s.lastModifiedAt).toLocaleString():""}</div>` : ""}
+  `;
+
+  // Wire — threshold slider
+  const slider = $("#ars-default-threshold");
+  slider.addEventListener("input",()=>{
+    $("#ars-default-threshold-val").textContent = slider.value + "%";
+  });
+
+  // Wire — add category
+  $("#ars-add-cat").addEventListener("click",()=>{
+    const name = $("#ars-new-cat").value.trim();
+    if(!name) return;
+    if(!AUTO_REPLY_SETTINGS.categories) AUTO_REPLY_SETTINGS.categories = {};
+    AUTO_REPLY_SETTINGS.categories[name] = { enabled: false, threshold: AUTO_REPLY_SETTINGS.defaultThreshold };
+    renderSettingsModal();
+  });
+
+  // Wire — remove blocked categories
+  $$("#ars-blocked-cats [data-blocked-cat]").forEach(b=>b.addEventListener("click",()=>{
+    AUTO_REPLY_SETTINGS.blockedCategories = (AUTO_REPLY_SETTINGS.blockedCategories||[]).filter(c=>c!==b.dataset.blockedCat);
+    renderSettingsModal();
+  }));
+  $("#ars-add-blocked-cat").addEventListener("click",()=>{
+    const v = $("#ars-new-blocked-cat").value.trim();
+    if(!v) return;
+    AUTO_REPLY_SETTINGS.blockedCategories = AUTO_REPLY_SETTINGS.blockedCategories||[];
+    if(!AUTO_REPLY_SETTINGS.blockedCategories.includes(v)) AUTO_REPLY_SETTINGS.blockedCategories.push(v);
+    renderSettingsModal();
+  });
+
+  // Wire — remove blocked keywords
+  $$("#ars-blocked-kw [data-blocked-kw]").forEach(b=>b.addEventListener("click",()=>{
+    AUTO_REPLY_SETTINGS.blockedKeywords = (AUTO_REPLY_SETTINGS.blockedKeywords||[]).filter(k=>k!==b.dataset.blockedKw);
+    renderSettingsModal();
+  }));
+  $("#ars-add-blocked-kw").addEventListener("click",()=>{
+    const v = $("#ars-new-blocked-kw").value.trim().toLowerCase();
+    if(!v) return;
+    AUTO_REPLY_SETTINGS.blockedKeywords = AUTO_REPLY_SETTINGS.blockedKeywords||[];
+    if(!AUTO_REPLY_SETTINGS.blockedKeywords.includes(v)) AUTO_REPLY_SETTINGS.blockedKeywords.push(v);
+    renderSettingsModal();
+  });
 }
 
-async function fsGetTicket(id) {
-  const data = await fsRequest(`/tickets/${id}?include=requester,stats`);
-  return data.ticket;
+function collectSettingsFromUI(){
+  const s = AUTO_REPLY_SETTINGS || {};
+  s.globalEnabled = $("#ars-global").checked;
+  s.defaultThreshold = parseInt($("#ars-default-threshold").value);
+  // Update per-category from inputs
+  $$(".ars-cat").forEach(row=>{
+    const name = row.dataset.catName;
+    s.categories[name] = {
+      enabled: row.querySelector(".ars-cat-enabled").checked,
+      threshold: parseInt(row.querySelector(".ars-cat-threshold").value)
+    };
+  });
+  return s;
 }
 
-async function fsUpdateTicket(id, fields) {
-  return fsRequest(`/tickets/${id}`, { method: "PUT", body: JSON.stringify(fields) });
-}
-
-async function fsAddNote(id, body, isPrivate = false) {
-  return fsRequest(`/tickets/${id}/notes`, { method: "POST", body: JSON.stringify({ body, private: isPrivate }) });
-}
-
-async function fsReplyToTicket(id, body) {
-  return fsRequest(`/tickets/${id}/reply`, { method: "POST", body: JSON.stringify({ body }) });
-}
-
-async function fsGetClosedTickets(limit = 200) {
-  const data = await fsRequest(`/tickets?per_page=${Math.min(limit, 100)}&order_type=desc&order_by=updated_at`);
-  return (data.tickets || []).filter(t => t.status === 4 || t.status === 5).slice(0, limit);
-}
-
-async function fsGetAgents() {
-  const data = await fsRequest(`/agents?per_page=100`);
-  return data.agents || [];
-}
-
-async function fsGetRequester(id) {
-  const data = await fsRequest(`/requesters/${id}`);
-  return data.requester;
-}
-
-async function fsFindAgentByName(name) {
-  if (!name) return null;
-  const agents = await fsGetAgentMap();
-  const lname = name.toLowerCase().trim();
-  for (const a of Object.values(agents)) {
-    if (a.name.toLowerCase() === lname) return a.id;
-    if (a.email && a.email.toLowerCase() === lname) return a.id;
+async function saveAutoReplySettings(){
+  const s = collectSettingsFromUI();
+  try{
+    const res = await fetch("/api/settingsAutoReply", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(s)
+    });
+    if(!res.ok) throw new Error("API " + res.status);
+    AUTO_REPLY_SETTINGS = await res.json();
+    toast("Settings saved");
+    closeModal("settingsModal");
+  }catch(e){
+    toast("Save failed: " + e.message, "error");
   }
+}
+
+$("#openSettingsBtn").addEventListener("click",()=>{
+  openModal("settingsModal");
+  loadAutoReplySettings();
+});
+$("#saveSettingsBtn").addEventListener("click",saveAutoReplySettings);
+$("#resetSettingsBtn").addEventListener("click",()=>{
+  if(!confirm("Reset auto-reply settings to defaults? This affects everyone on the IT team.")) return;
+  AUTO_REPLY_SETTINGS = {
+    globalEnabled: false, defaultThreshold: 85,
+    categories: {},
+    blockedCategories: ["NetSuite","Employee Onboarding/Offboarding","Other"],
+    blockedKeywords: ["urgent","asap","emergency","down","outage","fired","terminated","exec","ceo","cfo"]
+  };
+  renderSettingsModal();
+});
+
+// ============================================================
+// UI ENHANCEMENTS
+// ============================================================
+
+// 1. PRIORITY COLOR LEFT-BORDER on ticket cards
+const PRIO_BORDER = { 4: "var(--danger)", 3: "var(--warn)", 2: "#fbbf24", 1: "transparent" };
+function applyPrioBorder(el, priority) {
+  el.style.borderLeft = `3px solid ${PRIO_BORDER[priority] || "transparent"}`;
+}
+
+// 2. TICKET AGE HEATMAP
+function getAgeStyle(days) {
+  if (days >= 30) return { color: "var(--danger)", bg: "rgba(240,82,82,0.08)" };
+  if (days >= 14) return { color: "var(--warn)", bg: "rgba(245,158,11,0.08)" };
+  if (days >= 7)  return { color: "#fb923c", bg: "rgba(251,146,60,0.06)" };
+  return { color: "var(--ink-dim)", bg: "transparent" };
+}
+
+// 3. AGENT AVATARS
+const AGENTS = {
+  "Nathan Maharg":  { initials: "NM", color: "#6366f1", bg: "rgba(99,102,241,0.2)" },
+  "Steve Mitchell": { initials: "SM", color: "#34d399", bg: "rgba(52,211,153,0.2)" },
+  "Eric Hnatov":    { initials: "EH", color: "#f59e0b", bg: "rgba(245,158,11,0.2)" },
+};
+function agentAvatar(name) {
+  const a = AGENTS[name];
+  if (!a) return `<span style="font-size:11px;color:var(--ink-dim)">${name||"Unassigned"}</span>`;
+  return `<span title="${name}" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${a.bg};color:${a.color};font-size:9px;font-weight:800;letter-spacing:.5px">${a.initials}</span>`;
+}
+
+// 4. SLA COUNTDOWN TIMER
+function slaCountdown(slaDate) {
+  if (!slaDate) return null;
+  const diff = new Date(slaDate) - new Date();
+  if (diff < 0) return `<span style="color:var(--danger);font-weight:700;font-size:11px">⚠ Breached</span>`;
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h < 4) return `<span style="color:var(--warn);font-weight:700;font-size:11px">⏱ ${h}h ${m}m</span>`;
+  if (h < 24) return `<span style="color:var(--info);font-size:11px">${h}h ${m}m</span>`;
   return null;
 }
 
-let _agentsCache = null, _agentsCacheTime = 0;
-async function fsGetAgentMap() {
-  const now = Date.now();
-  if (_agentsCache && (now - _agentsCacheTime) < 5 * 60 * 1000) return _agentsCache;
-  const agents = await fsGetAgents();
-  const map = {};
-  for (const a of agents) {
-    map[a.id] = { id: a.id, name: `${a.first_name||""} ${a.last_name||""}`.trim() || a.email, email: a.email };
-  }
-  _agentsCache = map;
-  _agentsCacheTime = now;
-  return map;
-}
-
-async function callClaude(prompt, { maxTokens = 1000, model = "claude-sonnet-4-20250514" } = {}) {
-  const apiKey = await getSecret("ANTHROPIC-API-KEY");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-    body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] })
+// Update all SLA countdowns live
+setInterval(() => {
+  document.querySelectorAll("[data-sla]").forEach(el => {
+    const html = slaCountdown(el.dataset.sla);
+    if (html) el.innerHTML = html;
   });
-  if (!res.ok) { const text = await res.text(); throw new Error(`Claude ${res.status}: ${text.slice(0, 300)}`); }
-  const data = await res.json();
-  return data.content.filter(c => c.type === "text").map(c => c.text).join("").trim();
+}, 30000);
+
+// 5. ANIMATED TICKET ARRIVAL
+let _prevTicketIds = new Set();
+function markNewTickets(tickets) {
+  const curr = new Set(tickets.map(t => t.id));
+  const newIds = new Set([...curr].filter(id => !_prevTicketIds.has(id)));
+  _prevTicketIds = curr;
+  return newIds;
 }
 
-function parseJsonResponse(text) {
-  const clean = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-  return JSON.parse(clean);
+// 6. SEARCH HIGHLIGHT
+function highlightText(text, query) {
+  if (!query || query.length < 2) return escape(text);
+  const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")})`, "gi");
+  return escape(text).replace(re, `<mark style="background:rgba(251,191,36,0.35);color:var(--ink);border-radius:2px">$1</mark>`);
 }
 
-async function postTeamsCard(card) {
-  const url = await getSecret("TEAMS-WEBHOOK-URL");
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(card) });
-  if (!res.ok) { const text = await res.text(); throw new Error(`Teams ${res.status}: ${text.slice(0, 300)}`); }
-  return true;
+// 7. MINI SPARKLINES in stats strip
+const sparkData = { breach: [], risk: [], high: [], unass: [] };
+function updateSparklines() {
+  ["breach","risk","high","unass"].forEach(key => {
+    const val = parseInt(document.getElementById(`stat-${key}`)?.textContent) || 0;
+    sparkData[key].push(val);
+    if (sparkData[key].length > 7) sparkData[key].shift();
+  });
+  renderSparklines();
+}
+function renderSparklines() {
+  ["breach","risk","high","unass"].forEach(key => {
+    const d = sparkData[key];
+    if (d.length < 2) return;
+    const el = document.getElementById(`spark-${key}`);
+    if (!el) return;
+    const max = Math.max(...d, 1);
+    const w = 60, h = 20;
+    const pts = d.map((v,i) => `${Math.round(i*(w/(d.length-1)))},${Math.round(h - (v/max)*h)}`).join(" ");
+    el.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.6"/></svg>`;
+  });
 }
 
-module.exports = {
-  getSecret, getPrincipal, isInItTeam,
-  fsGetAllOpenTickets, fsGetTicket, fsUpdateTicket, fsAddNote, fsGetClosedTickets,
-  fsGetAgentMap, fsGetRequester, fsFindAgentByName, fsReplyToTicket,
-  callClaude, parseJsonResponse, postTeamsCard
+// Patch stats strip to include sparkline containers
+function patchStatsStrip() {
+  const ids = ["breach","risk","high","unass"];
+  ids.forEach(key => {
+    const el = document.getElementById(`stat-${key}`);
+    if (!el) return;
+    const stat = el.closest(".stat");
+    if (!stat || stat.querySelector(`#spark-${key}`)) return;
+    const spark = document.createElement("div");
+    spark.id = `spark-${key}`;
+    spark.style.cssText = "margin-top:2px;color:var(--ink-ghost)";
+    stat.appendChild(spark);
+  });
+}
+
+// 8. KEYBOARD SHORTCUTS
+let _kbFocusIdx = -1;
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  const tickets = Array.from(document.querySelectorAll(".ticket"));
+  if (!tickets.length) return;
+
+  if (e.key === "j" || e.key === "ArrowDown") {
+    e.preventDefault();
+    _kbFocusIdx = Math.min(_kbFocusIdx + 1, tickets.length - 1);
+    tickets[_kbFocusIdx]?.click();
+    tickets[_kbFocusIdx]?.scrollIntoView({ block: "nearest" });
+  } else if (e.key === "k" || e.key === "ArrowUp") {
+    e.preventDefault();
+    _kbFocusIdx = Math.max(_kbFocusIdx - 1, 0);
+    tickets[_kbFocusIdx]?.click();
+    tickets[_kbFocusIdx]?.scrollIntoView({ block: "nearest" });
+  } else if (e.key === " ") {
+    e.preventDefault();
+    tickets[_kbFocusIdx]?.querySelector(".ticket-check")?.click();
+  } else if (e.key === "?" ) {
+    showKbShortcuts();
+  } else if (e.key === "Escape") {
+    document.querySelectorAll(".modal-back.open").forEach(m => m.classList.remove("open"));
+  }
+});
+
+function showKbShortcuts() {
+  toast("Shortcuts: J/K = navigate · Space = select · T = triage · ? = this", "info");
+}
+
+// 9. DRAG-TO-ASSIGN
+function initDragToAssign() {
+  // Make agent avatars in sidebar droppable
+  document.querySelectorAll("[data-agent-drop]").forEach(drop => {
+    drop.addEventListener("dragover", e => { e.preventDefault(); drop.style.outline = `2px solid ${drop.dataset.color}`; });
+    drop.addEventListener("dragleave", () => { drop.style.outline = "none"; });
+    drop.addEventListener("drop", e => {
+      e.preventDefault();
+      drop.style.outline = "none";
+      const ticketId = e.dataTransfer.getData("ticketId");
+      const agentName = drop.dataset.agentDrop;
+      if (ticketId && agentName) {
+        stageChange(parseInt(ticketId), { responder_name: agentName }, `Assign → ${agentName}`);
+        toast(`Staged: assign #${ticketId} to ${agentName}`);
+      }
+    });
+  });
+}
+
+// ============================================================
+// DEVICES TAB — RETRIEVER INTEGRATION
+// ============================================================
+let _retrieverData = null;
+
+async function loadDevices() {
+  const wl = document.getElementById("warehouseList");
+  const rl = document.getElementById("returnsList");
+  const dl = document.getElementById("deploymentsList");
+  if (!wl) return;
+
+  [wl, rl, dl].forEach(el => el.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px"><div class="loader"></div></div>`);
+
+  try {
+    const res = await fetch("/api/retrieverList");
+    if (!res.ok) throw new Error(`${res.status}`);
+    _retrieverData = await res.json();
+    renderDevicesTab(_retrieverData);
+  } catch(err) {
+    [wl, rl, dl].forEach(el => el.innerHTML = `<div style="text-align:center;padding:30px;color:var(--danger);font-size:13px">Failed to load: ${err.message}</div>`);
+  }
+}
+
+// Device name helper
+function deviceName(d) {
+  return [d.manufacturer, d.model].filter(Boolean).join(" ") || d.device_series || "Device";
+}
+
+// Status badge helper
+function deviceStatusBadge(status) {
+  const s = (status || "unknown").toLowerCase();
+  const map = {
+    ready_for_deployment: { color: "var(--ok)", bg: "var(--ok-dim)", label: "READY" },
+    deployed: { color: "var(--accent)", bg: "var(--accent-dim)", label: "DEPLOYED" },
+    disposed: { color: "var(--ink-ghost)", bg: "var(--panel-2)", label: "DISPOSED" },
+    in_transit: { color: "var(--info)", bg: "rgba(96,165,250,0.1)", label: "IN TRANSIT" },
+    received_at_warehouse: { color: "var(--ok)", bg: "var(--ok-dim)", label: "AT WAREHOUSE" },
+    box_delivered: { color: "var(--warn)", bg: "var(--warn-dim)", label: "BOX DELIVERED" },
+    return_in_transit: { color: "var(--info)", bg: "rgba(96,165,250,0.1)", label: "RETURN IN TRANSIT" },
+  };
+  const style = map[s] || { color: "var(--ink-dim)", bg: "var(--panel-2)", label: s.toUpperCase().replace(/_/g, " ") };
+  return `<span style="background:${style.bg};color:${style.color};padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">${style.label}</span>`;
+}
+
+function renderDevicesTab(data) {
+  // Balances
+  const bs = document.getElementById("balancesStrip");
+  if (bs && data.balances && Array.isArray(data.balances)) {
+    bs.innerHTML = data.balances.map(b => `
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 16px;display:flex;flex-direction:column;gap:2px;min-width:120px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">${b.device_type || "Balance"}</div>
+        <div style="font-size:22px;font-weight:800;color:var(--accent);letter-spacing:-1px">${b.quantity ?? 0}</div>
+        <div style="font-size:11px;color:var(--ink-dim)">prepaid credits</div>
+      </div>
+    `).join("");
+  }
+
+  renderWarehouse(data.warehouse?.results || []);
+  renderReturns(data.returns?.results || []);
+  renderDeployments(data.deployments?.results || []);
+
+  // Populate deploy device select with proper names
+  const depSel = document.getElementById("dep-device");
+  const warehouseItems = data.warehouse?.results || [];
+  if (depSel) {
+    const deployable = warehouseItems.filter(d => d.status === "ready_for_deployment");
+    depSel.innerHTML = deployable.length
+      ? `<option value="">Select a device…</option>` + deployable.map(d =>
+          `<option value="${d.id}">${deviceName(d)}${d.serial_number ? ` · ${d.serial_number}` : ""} (${d.id})</option>`
+        ).join("")
+      : `<option value="">No devices ready for deployment</option>`;
+  }
+}
+
+function renderWarehouse(items) {
+  const wl = document.getElementById("warehouseList");
+  const query = document.getElementById("wh-search")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("wh-status")?.value || "";
+  const typeF = document.getElementById("wh-type")?.value?.toLowerCase() || "";
+
+  let filtered = items.filter(d => {
+    const name = deviceName(d).toLowerCase();
+    const sn = (d.serial_number || "").toLowerCase();
+    const tag = (d.asset_tag || "").toLowerCase();
+    if (query && !name.includes(query) && !sn.includes(query) && !tag.includes(query)) return false;
+    if (statusF && d.status !== statusF) return false;
+    if (typeF) {
+      const model = deviceName(d).toLowerCase();
+      if (!model.includes(typeF)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById("warehouseCount").textContent = `${filtered.length} / ${items.length} devices`;
+
+  if (!filtered.length) {
+    wl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No devices match filters</div>`;
+    return;
+  }
+
+  wl.innerHTML = filtered.map(d => {
+    const name = deviceName(d);
+    const specs = [d.ram ? d.ram + " RAM" : null, d.disk ? d.disk + " disk" : null, d.processor].filter(Boolean).join(" · ");
+    const charger = d.has_charger ? `<span style="color:var(--ok);font-size:10px">⚡ Charger</span>` : "";
+    const canDeploy = d.status === "ready_for_deployment";
+    return `
+      <div onclick="showWarehouseDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})"
+        style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:.12s"
+        onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono)">${d.id}</div>
+          ${deviceStatusBadge(d.status)}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px">${name}</div>
+        ${d.serial_number ? `<div style="font-size:11px;color:var(--ink-dim)">SN: ${d.serial_number}</div>` : ""}
+        ${d.asset_tag ? `<div style="font-size:11px;color:var(--ink-dim)">Tag: ${d.asset_tag}</div>` : ""}
+        ${specs ? `<div style="font-size:11px;color:var(--ink-ghost);margin-top:3px">${specs}</div>` : ""}
+        ${d.customer_name ? `<div style="font-size:11px;color:var(--info);margin-top:3px">👤 ${d.customer_name}</div>` : ""}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+          ${charger}
+          ${canDeploy
+            ? `<button class="btn primary" style="font-size:11px;padding:5px 12px" onclick="event.stopPropagation();openDeployFromWarehouse('${d.id}','${name.replace(/'/g, "\\'")}')">🚀 Deploy</button>`
+            : `<button class="btn" style="font-size:11px;padding:5px 12px;opacity:.4;cursor:not-allowed" disabled>🚀 Deploy</button>`
+          }
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderReturns(items) {
+  const rl = document.getElementById("returnsList");
+  const query = document.getElementById("ret-search")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("ret-status-filter")?.value || "";
+  const dateFrom = document.getElementById("ret-date-from")?.value || "";
+  const dateTo = "";
+
+  let filtered = items.filter(r => {
+    const name = (r.employee_info?.name || "").toLowerCase();
+    const city = (r.employee_info?.address_city || "").toLowerCase();
+    if (query && !name.includes(query) && !city.includes(query) && !r.id?.toLowerCase().includes(query)) return false;
+    const ship = r.shipments?.[0] || {};
+    if (statusF && ship.status !== statusF) return false;
+    if (dateFrom && r.created_at && r.created_at < dateFrom) return false;
+    if (dateTo && r.created_at && r.created_at.slice(0,10) > dateTo) return false;
+    return true;
+  });
+
+  document.getElementById("returnsCount").textContent = `${filtered.length} / ${items.length} orders`;
+
+  if (!filtered.length) {
+    rl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No returns match filters</div>`;
+    return;
+  }
+
+  rl.innerHTML = filtered.map(r => {
+    const ship = r.shipments?.[0] || {};
+    return `
+      <div onclick="showReturnDetail(${JSON.stringify(r).replace(/"/g,'&quot;')})"
+        style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:.12s"
+        onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:5px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono)">#${r.id}</div>
+          ${deviceStatusBadge(ship.status || "created")}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink)">${r.employee_info?.name || "Unknown"}</div>
+        <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${r.device || "Laptop"} · ${r.employee_info?.address_city || ""}, ${r.employee_info?.address_state || ""}</div>
+        ${ship.tracking_number ? `
+          <div style="font-size:11px;color:var(--info);margin-top:4px;display:flex;align-items:center;gap:4px">
+            📍 <span style="font-weight:600">${(ship.carrier||"").toUpperCase()}</span> ${ship.tracking_number}
+            <span style="color:var(--accent);font-size:10px;margin-left:auto">↗ Track</span>
+          </div>` : ""}
+        ${r.ticket_id ? `<div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">FS #${r.ticket_id}</div>` : ""}
+        <div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">${r.created_at ? new Date(r.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderDeployments(items) {
+  const dl = document.getElementById("deploymentsList");
+  const query = document.getElementById("dep-search-filter")?.value?.toLowerCase() || "";
+  const statusF = document.getElementById("dep-status-filter")?.value || "";
+  const dateFrom = document.getElementById("dep-date-from")?.value || "";
+  const dateTo = "";
+
+  let filtered = items.filter(d => {
+    const name = (d.employee_info?.name || "").toLowerCase();
+    const city = (d.employee_info?.address_city || "").toLowerCase();
+    if (query && !name.includes(query) && !city.includes(query) && !d.id?.toLowerCase().includes(query)) return false;
+    const ship = d.shipment || {};
+    if (statusF && ship.status !== statusF) return false;
+    if (dateFrom && d.created_at && d.created_at < dateFrom) return false;
+    if (dateTo && d.created_at && d.created_at.slice(0,10) > dateTo) return false;
+    return true;
+  });
+
+  document.getElementById("deploymentsCount").textContent = `${filtered.length} / ${items.length} orders`;
+
+  if (!filtered.length) {
+    dl.innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">No deployments match filters</div>`;
+    return;
+  }
+
+  dl.innerHTML = filtered.map(d => {
+    const ship = d.shipment || {};
+    return `
+      <div onclick="showDeploymentDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})"
+        style="background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:.12s"
+        onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:5px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono)">#${d.id}</div>
+          ${deviceStatusBadge(ship.status || "created")}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--ink)">${d.employee_info?.name || "Unknown"}</div>
+        <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${ship.device_type || "Device"} · ${d.employee_info?.address_city || ""}, ${d.employee_info?.address_state || ""}</div>
+        ${ship.tracking_number ? `
+          <div style="font-size:11px;color:var(--info);margin-top:4px;display:flex;align-items:center;gap:4px">
+            📍 <span style="font-weight:600">${(ship.carrier||"").toUpperCase()}</span> ${ship.tracking_number}
+            <span style="color:var(--accent);font-size:10px;margin-left:auto">↗ Track</span>
+          </div>` : ""}
+        ${d.ticket_id ? `<div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">FS #${d.ticket_id}</div>` : ""}
+        <div style="font-size:10px;color:var(--ink-ghost);margin-top:3px">${d.created_at ? new Date(d.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function filterDevices() {
+  if (!_retrieverData) return;
+  renderWarehouse(_retrieverData.warehouse?.results || []);
+  renderReturns(_retrieverData.returns?.results || []);
+  renderDeployments(_retrieverData.deployments?.results || []);
+}
+
+function openDeployFromWarehouse(deviceId, deviceType) {
+  const sel = document.getElementById("dep-device");
+  if (sel) sel.value = deviceId;
+  document.getElementById("dep-confirm-block").style.display = "none";
+  document.getElementById("dep-confirm-btn").classList.add("hidden");
+  document.getElementById("dep-preview-btn").classList.remove("hidden");
+  openModal("deployModal");
+}
+
+// Mode tab — devices
+document.querySelector('[data-mode="devices"]')?.addEventListener("click", () => {
+  if (!_retrieverData) loadDevices();
+});
+
+document.getElementById("refreshDevicesBtn")?.addEventListener("click", loadDevices);
+document.getElementById("newReturnBtn")?.addEventListener("click", () => {
+  document.getElementById("ret-confirm-block").style.display = "none";
+  document.getElementById("ret-confirm-btn").classList.add("hidden");
+  openModal("returnModal");
+});
+document.getElementById("newDeployBtn")?.addEventListener("click", () => {
+  document.getElementById("dep-confirm-block").style.display = "none";
+  document.getElementById("dep-confirm-btn").classList.add("hidden");
+  openModal("deployModal");
+});
+
+// Return modal preview & submit
+document.getElementById("ret-preview-btn")?.addEventListener("click", () => {
+  const name = document.getElementById("ret-name").value.trim();
+  const email = document.getElementById("ret-email").value.trim();
+  const addr1 = document.getElementById("ret-addr1").value.trim();
+  const city = document.getElementById("ret-city").value.trim();
+  const state = document.getElementById("ret-state").value.trim();
+  const zip = document.getElementById("ret-zip").value.trim();
+  if (!name || !email || !addr1 || !city || !state || !zip) {
+    toast("Please fill in all required fields (*)", "error"); return;
+  }
+  const charger = document.getElementById("ret-charger").checked;
+  document.getElementById("ret-confirm-text").innerHTML = `
+    <strong>Employee:</strong> ${name} (${email})<br>
+    <strong>Device:</strong> Standard Laptop${charger ? " + Charger" : ""}<br>
+    <strong>Ship to:</strong> ${addr1}, ${city}, ${state} ${zip}<br>
+    <strong>Return to:</strong> Retriever warehouse (Renovation Brands account)<br>
+    <br><em>A prepaid shipping box will be sent to the employee. This will be billed to your account.</em>
+  `;
+  document.getElementById("ret-confirm-block").style.display = "block";
+  document.getElementById("ret-confirm-btn").classList.remove("hidden");
+  document.getElementById("ret-preview-btn").classList.add("hidden");
+});
+
+document.getElementById("ret-confirm-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("ret-confirm-btn");
+  btn.disabled = true; btn.textContent = "Submitting…";
+  try {
+    const res = await fetch("/api/retrieverReturn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticketId: document.getElementById("ret-ticket").value.trim() || null,
+        device: "laptop",
+        serialNumber: document.getElementById("ret-serial").value.trim() || null,
+        requestCharger: document.getElementById("ret-charger").checked,
+        employeeInfo: {
+          name: document.getElementById("ret-name").value.trim(),
+          email: document.getElementById("ret-email").value.trim(),
+          address_line_1: document.getElementById("ret-addr1").value.trim(),
+          address_line_2: document.getElementById("ret-addr2").value.trim() || null,
+          address_city: document.getElementById("ret-city").value.trim(),
+          address_state: document.getElementById("ret-state").value.trim(),
+          address_zip: document.getElementById("ret-zip").value.trim(),
+          address_country: "United States"
+        }
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed");
+    toast(`✓ Return order created — Order ID: ${data.orderId}`);
+    closeModal("returnModal");
+    setTimeout(loadDevices, 1000);
+  } catch(err) {
+    toast(`Failed: ${err.message}`, "error");
+    btn.disabled = false; btn.textContent = "✓ Confirm & Submit";
+  }
+});
+
+// Deploy modal preview & submit
+document.getElementById("dep-preview-btn")?.addEventListener("click", () => {
+  const deviceId = document.getElementById("dep-device").value;
+  const name = document.getElementById("dep-name").value.trim();
+  const email = document.getElementById("dep-email").value.trim();
+  const addr1 = document.getElementById("dep-addr1").value.trim();
+  const city = document.getElementById("dep-city").value.trim();
+  const state = document.getElementById("dep-state").value.trim();
+  const zip = document.getElementById("dep-zip").value.trim();
+  const speed = document.getElementById("dep-speed").value;
+  if (!deviceId || !name || !email || !addr1 || !city || !state || !zip) {
+    toast("Please fill in all required fields (*)", "error"); return;
+  }
+  const speedLabel = { standard_shipping: "Standard", "2nd_day": "2nd Day", next_day: "Next Day" }[speed] || speed;
+  document.getElementById("dep-confirm-text").innerHTML = `
+    <strong>Device:</strong> ${deviceId}<br>
+    <strong>Ship to:</strong> ${name} (${email})<br>
+    <strong>Address:</strong> ${addr1}, ${city}, ${state} ${zip}<br>
+    <strong>Shipping:</strong> ${speedLabel}<br>
+    <br><em>Device will be shipped from Retriever's warehouse. This will be billed to your account.</em>
+  `;
+  document.getElementById("dep-confirm-block").style.display = "block";
+  document.getElementById("dep-confirm-btn").classList.remove("hidden");
+  document.getElementById("dep-preview-btn").classList.add("hidden");
+});
+
+document.getElementById("dep-confirm-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("dep-confirm-btn");
+  btn.disabled = true; btn.textContent = "Deploying…";
+  try {
+    const res = await fetch("/api/retrieverDeploy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticketId: document.getElementById("dep-ticket").value.trim() || null,
+        deviceId: document.getElementById("dep-device").value,
+        shippingSpeed: document.getElementById("dep-speed").value,
+        employeeInfo: {
+          name: document.getElementById("dep-name").value.trim(),
+          email: document.getElementById("dep-email").value.trim(),
+          address_line_1: document.getElementById("dep-addr1").value.trim(),
+          address_line_2: document.getElementById("dep-addr2").value.trim() || null,
+          address_city: document.getElementById("dep-city").value.trim(),
+          address_state: document.getElementById("dep-state").value.trim(),
+          address_zip: document.getElementById("dep-zip").value.trim(),
+          address_country: "United States"
+        }
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed");
+    toast(`✓ Deployment created — Order ID: ${data.orderId}`);
+    closeModal("deployModal");
+    setTimeout(loadDevices, 1000);
+  } catch(err) {
+    toast(`Failed: ${err.message}`, "error");
+    btn.disabled = false; btn.textContent = "✓ Confirm & Deploy";
+  }
+});
+
+// Hook into mode tab switching for devices
+const _origModeSwitch = window._modeSwitch;
+document.querySelectorAll(".modetab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const mode = btn.dataset.mode;
+    document.querySelectorAll(".modetab").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("mainTriage")?.classList.toggle("hidden", mode !== "triage");
+    document.getElementById("mainStandup")?.classList.toggle("hidden", mode !== "standup");
+    document.getElementById("mainPatterns")?.classList.toggle("hidden", mode !== "patterns");
+    document.getElementById("mainDevices")?.classList.toggle("hidden", mode !== "devices");
+  });
+});
+
+// Boot patch: add sparklines and drag-to-assign after DOM ready
+setTimeout(() => {
+  patchStatsStrip();
+  initDragToAssign();
+  updateSparklines();
+}, 500);
+// Update sparklines on each fetch
+const _origFetch = window.fetchTickets;
+if (typeof fetchTickets === "function") {
+  const __orig = fetchTickets;
+  window.fetchTickets = async function(...args) {
+    const r = await __orig(...args);
+    updateSparklines();
+    return r;
+  };
+}
+// ============================================================
+// NETWORK TAB — MERAKI (Enhanced)
+// ============================================================
+let _merakiData = null;
+let _selectedNetworkId = null;
+
+const DEVICE_TYPE_ICON = { appliance: "🔥", switch: "🔀", wireless: "📡" };
+const DEVICE_TYPE_LABEL = { appliance: "Firewall/MX", switch: "Switch", wireless: "Access Point" };
+
+function merakiStatusBadge(status) {
+  const map = {
+    online: { color: "var(--ok)", bg: "var(--ok-dim)", label: "ONLINE" },
+    offline: { color: "var(--danger)", bg: "var(--danger-dim)", label: "OFFLINE" },
+    alerting: { color: "var(--warn)", bg: "var(--warn-dim)", label: "ALERTING" },
+    dormant: { color: "var(--ink-ghost)", bg: "var(--panel-2)", label: "DORMANT" },
+    active: { color: "var(--ok)", bg: "var(--ok-dim)", label: "ACTIVE" },
+    failed: { color: "var(--danger)", bg: "var(--danger-dim)", label: "FAILED" },
+    connecting: { color: "var(--warn)", bg: "var(--warn-dim)", label: "CONNECTING" },
+  };
+  const s = map[(status||"").toLowerCase()] || { color: "var(--ink-dim)", bg: "var(--panel-2)", label: (status||"UNKNOWN").toUpperCase() };
+  return `<span style="background:${s.bg};color:${s.color};padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">${s.label}</span>`;
+}
+
+function uplinkPerfBadge(perf) {
+  if (!perf) return "";
+  const loss = perf.avgLoss || 0;
+  const latency = perf.avgLatency || 0;
+  if (loss > 5 || latency > 100) return `<span style="color:var(--danger);font-size:10px;font-weight:700">⚠ ${loss}% loss · ${latency}ms</span>`;
+  if (loss > 1 || latency > 50) return `<span style="color:var(--warn);font-size:10px">${loss}% loss · ${latency}ms</span>`;
+  return `<span style="color:var(--ok);font-size:10px">✓ ${latency}ms</span>`;
+}
+
+async function loadNetwork() {
+  const grid = document.getElementById("networkGrid");
+  const strip = document.getElementById("networkSummaryStrip");
+  if (!grid) return;
+  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Meraki data…</div>`;
+
+  try {
+    const res = await fetch("/api/merakiContext?type=overview");
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    _merakiData = await res.json();
+    const el = document.getElementById("netLastUpdated");
+    if (el) el.textContent = `updated ${new Date().toLocaleTimeString()}`;
+    renderNetwork(_merakiData);
+  } catch(err) {
+    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">
+      Failed to load Meraki: ${err.message}<br>
+      <span style="color:var(--ink-dim);font-size:11px;display:block;margin-top:6px">Check MERAKI_API_KEY in environment variables</span>
+    </div>`;
+  }
+}
+
+function renderNetwork(data) {
+  const strip = document.getElementById("networkSummaryStrip");
+  const s = data.summary || {};
+  if (strip) {
+    strip.innerHTML = [
+      { label: "Total Devices", val: s.total||0, color: "var(--ink)", sub: `across ${s.networks||0} sites` },
+      { label: "Online", val: s.online||0, color: "var(--ok)", sub: "devices healthy" },
+      { label: "Offline", val: s.offline||0, color: s.offline>0?"var(--danger)":"var(--ink-dim)", sub: s.offline>0?"needs attention":"" },
+      { label: "Alerting", val: s.alerting||0, color: s.alerting>0?"var(--warn)":"var(--ink-dim)", sub: s.alerting>0?"check dashboard":"" },
+      { label: "Active Alerts", val: s.activeAlerts||0, color: s.activeAlerts>0?"var(--warn)":"var(--ink-dim)", sub: "Meraki alerts" },
+      { label: "Uptime", val: s.total>0?Math.round(((s.online||0)/s.total)*100)+"%":"—", color: s.offline>0?"var(--warn)":"var(--ok)", sub: "device availability" },
+    ].map(item => `
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
+        <div style="font-size:26px;font-weight:800;color:${item.color};letter-spacing:-1px;line-height:1">${item.val}</div>
+        ${item.sub ? `<div style="font-size:10px;color:var(--ink-ghost);margin-top:2px">${item.sub}</div>` : ""}
+      </div>
+    `).join("");
+  }
+  renderNetworkGrid(data.networks || []);
+}
+
+function renderNetworkGrid(networks) {
+  const grid = document.getElementById("networkGrid");
+  const query = document.getElementById("networkSearch")?.value?.toLowerCase() || "";
+
+  let filtered = networks;
+  if (query) {
+    filtered = networks.filter(n =>
+      (n.networkName||"").toLowerCase().includes(query) ||
+      n.devices.some(d => (d.name||"").toLowerCase().includes(query) || (d.model||"").toLowerCase().includes(query))
+    );
+  }
+
+  if (!filtered.length) {
+    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No sites match your search</div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(n => {
+    const hasIssues = n.summary.offline > 0 || n.summary.alerting > 0 || n.summary.alerts > 0;
+    const borderColor = n.summary.offline > 0 ? "var(--danger)" : n.summary.alerting > 0 ? "var(--warn)" : "var(--border)";
+    const isSelected = _selectedNetworkId === n.networkId;
+
+    // Show top 4 devices only in card
+    const deviceRows = n.devices.slice(0, 4).map(d => `
+      <div style="display:grid;grid-template-columns:18px 1fr auto;gap:7px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px">${DEVICE_TYPE_ICON[d.productType]||"📟"}</span>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:${d.status==="offline"?"var(--danger)":d.status==="alerting"?"var(--warn)":"var(--ink)"}">${d.name||d.serial}</div>
+          <div style="font-size:10px;color:var(--ink-ghost)">${d.model||""}</div>
+        </div>
+        ${merakiStatusBadge(d.status)}
+      </div>
+    `).join("");
+
+    const moreCount = n.devices.length > 4 ? `<div style="font-size:10px;color:var(--ink-ghost);padding-top:4px">+${n.devices.length-4} more devices</div>` : "";
+
+    return `
+      <div onclick="drillDownNetwork('${n.networkId}', '${escape(n.networkName)}')"
+        style="background:var(--panel);border:2px solid ${isSelected?"var(--accent)":borderColor};border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:all .15s;
+               ${isSelected?"box-shadow:0 0 0 1px var(--accent-dim)":""}"
+        onmouseover="this.style.borderColor='${isSelected?"var(--accent)":hasIssues?borderColor:"var(--border-hot)"}'"
+        onmouseout="this.style.borderColor='${isSelected?"var(--accent)":borderColor}'">
+        <!-- Header -->
+        <div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--ink)">${n.networkName}</div>
+            <div style="font-size:10px;color:var(--ink-dim);margin-top:2px">
+              ${n.summary.appliances?`🔥${n.summary.appliances} `:""}${n.summary.switches?`🔀${n.summary.switches} `:""}${n.summary.wireless?`📡${n.summary.wireless}`:""}
+              · ${n.summary.total} devices
+            </div>
+          </div>
+          <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:end">
+            ${n.summary.offline>0?`<span style="background:var(--danger-dim);color:var(--danger);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">${n.summary.offline} OFFLINE</span>`:""}
+            ${n.summary.alerting>0?`<span style="background:var(--warn-dim);color:var(--warn);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">${n.summary.alerting} ALERTING</span>`:""}
+            ${n.summary.alerts>0?`<span style="background:rgba(251,191,36,0.1);color:var(--warn);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">⚠ ${n.summary.alerts}</span>`:""}
+            ${!hasIssues?`<span style="background:var(--ok-dim);color:var(--ok);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">✓ HEALTHY</span>`:""}
+          </div>
+        </div>
+        <!-- Device list -->
+        <div style="padding:8px 12px">
+          ${deviceRows}
+          ${moreCount}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function drillDownNetwork(networkId, networkName) {
+  _selectedNetworkId = networkId;
+  // Re-render grid to show selected state
+  if (_merakiData) renderNetworkGrid(_merakiData.networks || []);
+
+  const panel = document.getElementById("networkDrillContent");
+  document.querySelector("#networkDrillDown > div:first-child").innerHTML =
+    `<div style="font-size:13px;font-weight:700;color:var(--ink)">${unescape(networkName)}</div>`;
+
+  panel.innerHTML = `<div style="text-align:center;padding:30px"><div class="loader" style="margin:0 auto 10px"></div><div style="color:var(--ink-dim);font-size:12px">Loading site details…</div></div>`;
+
+  try {
+    const res = await fetch(`/api/merakiContext?type=network&networkId=${networkId}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    renderDrillDown(data);
+  } catch(err) {
+    panel.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:16px">Failed to load site details: ${err.message}</div>`;
+  }
+}
+
+function renderDrillDown(data) {
+  const panel = document.getElementById("networkDrillContent");
+
+  // Group devices by type
+  const appliances = data.devices.filter(d => d.productType === "appliance");
+  const switches = data.devices.filter(d => d.productType === "switch");
+  const aps = data.devices.filter(d => d.productType === "wireless");
+  const other = data.devices.filter(d => !["appliance","switch","wireless"].includes(d.productType));
+
+  function deviceSection(label, icon, devices) {
+    if (!devices.length) return "";
+    return `
+      <div style="margin-bottom:12px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">${icon} ${label}</div>
+        ${devices.map(d => {
+          const uplinks = d.uplinks || [];
+          const hasUplinkIssue = uplinks.some(u => u.status !== "active");
+          return `
+            <div onclick="showNetworkDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')}, '${escape(data.networkName||"")}')"
+              style="background:var(--panel-2);border:1px solid ${d.status==="offline"?"var(--danger)":d.status==="alerting"?"var(--warn)":"var(--border)"};
+                     border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:.12s"
+              onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='var(--panel-2)'">
+              <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px">
+                <div style="font-size:12px;font-weight:700;color:var(--ink)">${d.name||d.serial}</div>
+                ${merakiStatusBadge(d.status)}
+              </div>
+              <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:4px">${d.model||""} · ${d.lanIp||""}</div>
+              ${d.clientCount !== null ? `<div style="font-size:10px;color:var(--info)">👥 ${d.clientCount} clients connected</div>` : ""}
+              ${uplinks.map(u => `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;font-size:10px">
+                  <span style="color:var(--ink-dim);font-weight:600">${(u.interface||"").toUpperCase()}</span>
+                  <span style="color:var(--ink-dim)">${u.ip||"—"} → ${u.publicIp||"—"}</span>
+                  ${merakiStatusBadge(u.status)}
+                  ${uplinkPerfBadge(d.uplinkPerf?.[u.interface])}
+                </div>
+              `).join("")}
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  // VPN status
+  const vpnHtml = data.vpn?.length ? `
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">🔐 VPN Tunnels</div>
+      ${data.vpn.map(v => `
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px;margin-bottom:4px;font-size:11px">
+          <div style="font-size:11px;font-weight:600;color:var(--ink)">${v.networkName||v.networkId}</div>
+          <div style="color:var(--ink-dim);margin-top:2px">${(v.vpnPeers||[]).length} peers</div>
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+
+  // Recent clients
+  const clientsHtml = data.clients?.length ? `
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">👥 Recent Clients (${data.clientTotal||data.clients.length})</div>
+      <div style="max-height:140px;overflow-y:auto">
+        ${data.clients.map(c => `
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px">
+            <div>
+              <span style="color:var(--ink);font-weight:500">${c.description||c.mac||"Unknown"}</span>
+              <span style="color:var(--ink-ghost);margin-left:6px">${c.ip||""}</span>
+            </div>
+            <span style="color:var(--ink-dim)">${c.recentDeviceName||""}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  ` : "";
+
+  panel.innerHTML = `
+    <div style="padding:14px 16px;overflow-y:auto;max-height:70vh">
+      ${deviceSection("Firewalls / MX", "🔥", appliances)}
+      ${deviceSection("Switches", "🔀", switches)}
+      ${deviceSection("Access Points", "📡", aps)}
+      ${deviceSection("Other", "📟", other)}
+      ${vpnHtml}
+      ${clientsHtml}
+      ${!data.devices.length ? `<div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:12px">No devices found for this site</div>` : ""}
+    </div>
+  `;
+}
+
+function filterNetwork() {
+  if (!_merakiData) return;
+  renderNetworkGrid(_merakiData.networks || []);
+}
+
+// Meraki context in Network tickets
+async function loadMerakiTicketContext(ticketId, ticket) {
+  const host = document.getElementById(`merakiCtx_${ticketId}`);
+  if (!host) return;
+  try {
+    const hint = ticket.requester_name || ticket.sub_category || "";
+    const res = await fetch(`/api/merakiContext?type=ticket-context&hint=${encodeURIComponent(hint)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const withIssues = (data.networks || []).filter(n => n.hasIssues);
+    if (!withIssues.length) {
+      host.innerHTML = `<div style="color:var(--ok);font-size:12px">✓ No network issues detected across all sites</div>`;
+      return;
+    }
+    host.innerHTML = withIssues.map(n => `
+      <div style="background:var(--danger-dim);border:1px solid var(--danger);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:6px;font-size:12px">
+        <div style="font-weight:700;color:var(--danger);margin-bottom:4px">⚠ ${n.networkName}</div>
+        ${n.offline.map(d=>`<div style="color:var(--ink-dim)">📟 ${d.name} (${DEVICE_TYPE_LABEL[d.type]||d.type}) — OFFLINE · last seen ${d.lastSeen?new Date(d.lastSeen).toLocaleString():"unknown"}</div>`).join("")}
+        ${n.alerting.map(d=>`<div style="color:var(--warn)">⚠ ${d.name} (${DEVICE_TYPE_LABEL[d.type]||d.type}) — ALERTING</div>`).join("")}
+        ${n.failedUplinks.map(u=>`<div style="color:var(--danger)">🔌 ${u.device} ${u.interface.toUpperCase()} — ${u.status.toUpperCase()}</div>`).join("")}
+      </div>
+    `).join("");
+  } catch(e) {
+    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">Network context unavailable</div>`;
+  }
+}
+
+function merakiStatusBadge(status) {
+  const map = {
+    online: { color: "var(--ok)", bg: "var(--ok-dim)", label: "ONLINE" },
+    offline: { color: "var(--danger)", bg: "var(--danger-dim)", label: "OFFLINE" },
+    alerting: { color: "var(--warn)", bg: "var(--warn-dim)", label: "ALERTING" },
+    dormant: { color: "var(--ink-ghost)", bg: "var(--panel-2)", label: "DORMANT" },
+  };
+  const s = map[status] || { color: "var(--ink-dim)", bg: "var(--panel-2)", label: (status||"UNKNOWN").toUpperCase() };
+  return `<span style="background:${s.bg};color:${s.color};padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">${s.label}</span>`;
+}
+
+async function loadNetwork() {
+  const grid = document.getElementById("networkGrid");
+  const strip = document.getElementById("networkSummaryStrip");
+  if (!grid) return;
+  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Meraki data…</div>`;
+
+  try {
+    const res = await fetch("/api/merakiContext?type=overview");
+    if (!res.ok) throw new Error(`${res.status}`);
+    _merakiData = await res.json();
+    renderNetwork(_merakiData);
+  } catch(err) {
+    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load Meraki data: ${err.message}<br><span style="color:var(--ink-dim);font-size:11px;margin-top:6px;display:block">Make sure MERAKI_API_KEY is set in environment variables</span></div>`;
+  }
+}
+
+function renderNetwork(data) {
+  const strip = document.getElementById("networkSummaryStrip");
+  const s = data.summary || {};
+  if (strip) {
+    strip.innerHTML = [
+      { label: "Total Devices", val: s.total||0, color: "var(--ink)", cls: "" },
+      { label: "Online", val: s.online||0, color: "var(--ok)", cls: "" },
+      { label: "Offline", val: s.offline||0, color: s.offline>0?"var(--danger)":"var(--ink)", cls: s.offline>0?"alert":"" },
+      { label: "Alerting", val: s.alerting||0, color: s.alerting>0?"var(--warn)":"var(--ink)", cls: "" },
+      { label: "Sites", val: s.networks||0, color: "var(--accent)", cls: "" },
+    ].map(item => `
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
+        <div style="font-size:26px;font-weight:800;color:${item.color};letter-spacing:-1px;line-height:1">${item.val}</div>
+      </div>
+    `).join("");
+  }
+  renderNetworkGrid(data.networks || []);
+}
+
+function renderNetworkGrid(networks) {
+  const grid = document.getElementById("networkGrid");
+  const query = document.getElementById("networkSearch")?.value?.toLowerCase() || "";
+
+  let filtered = networks;
+  if (query) {
+    filtered = networks.filter(n =>
+      (n.networkName||"").toLowerCase().includes(query) ||
+      n.devices.some(d => (d.name||"").toLowerCase().includes(query) || (d.model||"").toLowerCase().includes(query))
+    );
+  }
+
+  if (!filtered.length) {
+    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No sites match your search</div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(n => {
+    const hasIssues = n.summary.offline > 0 || n.summary.alerting > 0;
+    const borderColor = n.summary.offline > 0 ? "var(--danger)" : n.summary.alerting > 0 ? "var(--warn)" : "var(--border)";
+
+    const deviceRows = n.devices.map(d => `
+      <div onclick="showNetworkDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')}, '${escape(n.networkName)}')"
+        style="display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:7px 10px;border-radius:var(--radius-sm);cursor:pointer;transition:.12s"
+        onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
+        <span style="font-size:14px">${DEVICE_TYPE_ICON[d.productType]||"📟"}</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.name||d.serial}</div>
+          <div style="font-size:10px;color:var(--ink-dim)">${d.model||""} ${d.productType ? "· "+DEVICE_TYPE_LABEL[d.productType] : ""}</div>
+        </div>
+        ${d.uplinks?.length ? `<div style="font-size:10px;color:var(--ink-dim)">${d.uplinks.filter(u=>u.status==="active").length}/${d.uplinks.length} WAN</div>` : "<div></div>"}
+        ${merakiStatusBadge(d.status)}
+      </div>
+    `).join("");
+
+    return `
+      <div style="background:var(--panel);border:1px solid ${borderColor};border-radius:var(--radius);overflow:hidden;transition:.15s"
+           onmouseover="this.style.borderColor='${hasIssues?borderColor:"var(--border-hot)"}'" onmouseout="this.style.borderColor='${borderColor}'">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--ink)">${n.networkName}</div>
+            <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">
+              ${n.summary.appliances ? `🔥 ${n.summary.appliances}` : ""}
+              ${n.summary.switches ? ` 🔀 ${n.summary.switches}` : ""}
+              ${n.summary.wireless ? ` 📡 ${n.summary.wireless}` : ""}
+              · ${n.summary.total} devices
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            ${n.summary.offline > 0 ? `<span style="background:var(--danger-dim);color:var(--danger);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">${n.summary.offline} OFFLINE</span>` : ""}
+            ${n.summary.alerting > 0 ? `<span style="background:var(--warn-dim);color:var(--warn);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">${n.summary.alerting} ALERTING</span>` : ""}
+            ${!hasIssues ? `<span style="background:var(--ok-dim);color:var(--ok);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">ALL ONLINE</span>` : ""}
+          </div>
+        </div>
+        <div style="padding:4px">${deviceRows}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function filterNetwork() {
+  if (!_merakiData) return;
+  renderNetworkGrid(_merakiData.networks || []);
+}
+
+function showNetworkDeviceDetail(device, networkName) {
+  document.getElementById("netDevTitle").textContent = device.name || device.serial;
+  const lastSeen = device.lastReportedAt ? new Date(device.lastReportedAt).toLocaleString() : "Unknown";
+  const uplinksHtml = device.uplinks?.length ? `
+    <div style="margin-top:10px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">WAN Uplinks</div>
+      ${device.uplinks.map(u => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:4px;font-size:12px">
+          <span style="color:var(--ink-dim);font-weight:600">${(u.interface||"").toUpperCase()}</span>
+          <span style="color:var(--ink)">${u.ip||"—"}</span>
+          <span style="color:var(--ink-dim)">→ ${u.publicIp||"—"}</span>
+          ${merakiStatusBadge(u.status)}
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+  document.getElementById("netDevBody").innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Status</div>
+        <div>${merakiStatusBadge(device.status)}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Type</div>
+        <div style="font-size:12px;font-weight:600;color:var(--ink)">${DEVICE_TYPE_ICON[device.productType]||""} ${DEVICE_TYPE_LABEL[device.productType]||device.productType||"Device"}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Model</div>
+        <div style="font-size:12px;font-weight:600;color:var(--ink)">${device.model||"—"}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Site</div>
+        <div style="font-size:12px;font-weight:600;color:var(--ink)">${networkName}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Serial</div>
+        <div style="font-size:12px;font-family:var(--mono);color:var(--accent)">${device.serial}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">LAN IP</div>
+        <div style="font-size:12px;font-family:var(--mono);color:var(--ink)">${device.lanIp||"—"}</div>
+      </div>
+    </div>
+    <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px">
+      <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Last Reported</div>
+      <div style="font-size:12px;color:var(--ink)">${lastSeen}</div>
+    </div>
+    ${uplinksHtml}
+  `;
+  openModal("networkDeviceModal");
+}
+
+// Retriever device detail modal
+function showWarehouseDeviceDetail(d) {
+  const name = deviceName(d);
+  document.getElementById("devDetailTitle").textContent = name;
+  const specs = [
+    d.ram ? `${d.ram} RAM` : null,
+    d.disk ? `${d.disk} storage` : null,
+    d.processor || null,
+    d.screen_size ? `${d.screen_size}" screen` : null,
+    d.operating_system ? `${d.operating_system} ${d.os_version||""}`.trim() : null,
+    d.release_year ? `Released ${d.release_year}` : null,
+  ].filter(Boolean);
+
+  const canDeploy = d.status === "ready_for_deployment";
+  document.getElementById("devDetailDeployBtn").classList.toggle("hidden", !canDeploy);
+  if (canDeploy) {
+    document.getElementById("devDetailDeployBtn").onclick = () => {
+      closeModal("deviceDetailModal");
+      openDeployFromWarehouse(d.id, name);
+    };
+  }
+
+  document.getElementById("devDetailBody").innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div style="grid-column:span 2;background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 12px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Status</div>
+        ${deviceStatusBadge(d.status)}
+      </div>
+      ${d.serial_number ? `
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Serial Number</div>
+          <div style="font-size:12px;font-family:var(--mono);color:var(--accent)">${d.serial_number}</div>
+        </div>` : ""}
+      ${d.asset_tag ? `
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Asset Tag</div>
+          <div style="font-size:12px;font-family:var(--mono);color:var(--ink)">${d.asset_tag}</div>
+        </div>` : ""}
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Warehouse ID</div>
+        <div style="font-size:12px;font-family:var(--mono);color:var(--accent)">${d.id}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Charger</div>
+        <div style="font-size:12px;color:${d.has_charger?"var(--ok)":"var(--ink-dim)"}">${d.has_charger?"⚡ Included":"Not included"}</div>
+      </div>
+      ${d.customer_name ? `
+        <div style="grid-column:span 2;background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Assigned To</div>
+          <div style="font-size:12px;font-weight:600;color:var(--info)">👤 ${d.customer_name}</div>
+        </div>` : ""}
+    </div>
+    ${specs.length ? `
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Specifications</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${specs.map(s => `<span style="background:var(--panel);border:1px solid var(--border);padding:3px 8px;border-radius:20px;font-size:11px;color:var(--ink-dim)">${s}</span>`).join("")}
+        </div>
+      </div>` : ""}
+    ${d.initial_deployment ? `
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">First Deployed</div>
+        <div style="font-size:12px;color:var(--ink)">${new Date(d.initial_deployment).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"})}</div>
+      </div>` : ""}
+    ${d.notes ? `
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;margin-top:8px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Notes</div>
+        <div style="font-size:12px;color:var(--ink-dim);line-height:1.5">${d.notes}</div>
+      </div>` : ""}
+  `;
+  openModal("deviceDetailModal");
+}
+
+// Make return/deployment cards clickable — open tracking URL
+function showReturnDetail(r) {
+  const ship = r.shipments?.[0] || {};
+  const trackingUrl = ship.tracking_number && ship.carrier
+    ? getTrackingUrl(ship.carrier, ship.tracking_number)
+    : null;
+  if (trackingUrl) {
+    window.open(trackingUrl, "_blank", "noopener");
+  } else {
+    toast(`Order #${r.id} · ${r.employee_info?.name||"Unknown"} · Status: ${(ship.status||"created").replace(/_/g," ")}`, "info");
+  }
+}
+
+function showDeploymentDetail(d) {
+  const ship = d.shipment || {};
+  const trackingUrl = ship.tracking_number && ship.carrier
+    ? getTrackingUrl(ship.carrier, ship.tracking_number)
+    : null;
+  if (trackingUrl) {
+    window.open(trackingUrl, "_blank", "noopener");
+  } else {
+    toast(`Deployment #${d.id} · ${d.employee_info?.name||"Unknown"} · Status: ${(ship.status||"created").replace(/_/g," ")}`, "info");
+  }
+}
+
+function getTrackingUrl(carrier, number) {
+  const c = (carrier||"").toLowerCase();
+  if (c.includes("ups")) return `https://www.ups.com/track?tracknum=${number}`;
+  if (c.includes("fedex")) return `https://www.fedex.com/fedextrack/?trknbr=${number}`;
+  if (c.includes("usps")) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${number}`;
+  if (c.includes("dhl")) return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${number}`;
+  return null;
+}
+
+// Standup team count clickability
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-standup-filter]");
+  if (!el) return;
+  const agent = el.dataset.standupFilter;
+  switchMode("triage");
+  // Set scope to all and filter by agent name
+  FILTERS.scope = "all";
+  FILTERS.search = agent;
+  document.getElementById("searchInput").value = agent;
+  $$(".filter-btn[data-scope]").forEach(b => b.classList.toggle("active", b.dataset.scope === "all"));
+  updateCounts(); renderList();
+});
+
+// Network tab mode switch
+document.querySelector('[data-mode="network"]')?.addEventListener("click", () => {
+  if (!_merakiData) loadNetwork();
+});
+
+document.getElementById("refreshNetworkBtn")?.addEventListener("click", () => {
+  _merakiData = null;
+  loadNetwork();
+});
+
+// Extend mode tab switching to include network tab
+const _origTabSwitch = document.querySelectorAll(".modetab");
+document.querySelectorAll(".modetab").forEach(btn => {
+  // Remove old listeners by cloning (safer)
+  const clone = btn.cloneNode(true);
+  btn.parentNode.replaceChild(clone, btn);
+});
+document.querySelectorAll(".modetab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const mode = btn.dataset.mode;
+    document.querySelectorAll(".modetab").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("mainTriage")?.classList.toggle("hidden", mode !== "triage");
+    document.getElementById("mainStandup")?.classList.toggle("hidden", mode !== "standup");
+    document.getElementById("mainPatterns")?.classList.toggle("hidden", mode !== "patterns");
+    document.getElementById("mainDevices")?.classList.toggle("hidden", mode !== "devices");
+    document.getElementById("mainNetwork")?.classList.toggle("hidden", mode !== "network");
+    document.getElementById("mainKb")?.classList.toggle("hidden", mode !== "kb");
+    document.getElementById("mainAnalytics")?.classList.toggle("hidden", mode !== "analytics");
+    document.getElementById("mainFleet")?.classList.toggle("hidden", mode !== "fleet");
+    if (mode === "standup") renderStandup();
+    if (mode === "devices" && !_retrieverData) loadDevices();
+    if (mode === "network" && !_merakiData) loadNetwork();
+    if (mode === "kb" && !_kbData) loadKB();
+    if (mode === "analytics") renderAnalytics();
+    if (mode === "fleet" && !_fleetData) loadFleet();
+  });
+});
+
+// ============================================================
+// BRAND DETECTION & MANAGEMENT
+// ============================================================
+const BUILT_IN_BRANDS = {
+  "americantinceiling.com": "American Tin Ceilings",
+  "baseboarders.com": "Baseboarders",
+  "ventcoversunlimited.com": "Vent Covers Unlimited",
+  "madelyncarter.com": "Madelyn Carter",
+  "trueformconcrete.com": "Trueform Concrete",
+  "rtacabinetstore.com": "RTA Cabinet Store",
+  "reggioregister.com": "Reggio Registers",
+  "hearthbrands.com": "Hearth Brands"
 };
+const PROMPT_DOMAINS = new Set(["renovationbrands.com"]);
+let _customBrands = null; // loaded from storage
+
+async function getCustomBrands() {
+  if (_customBrands) return _customBrands;
+  try {
+    const r = await window.storage.get("custom_brands");
+    _customBrands = r ? JSON.parse(r.value) : {};
+  } catch(e) { _customBrands = {}; }
+  return _customBrands;
+}
+
+async function saveCustomBrands(brands) {
+  _customBrands = brands;
+  await window.storage.set("custom_brands", JSON.stringify(brands));
+}
+
+async function getBrandForEmail(email) {
+  if (!email) return null;
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return null;
+  if (BUILT_IN_BRANDS[domain]) return BUILT_IN_BRANDS[domain];
+  const custom = await getCustomBrands();
+  if (custom[domain]) return custom[domain];
+  return null;
+}
+
+async function getBrandAssignment(email) {
+  if (!email) return null;
+  try {
+    const r = await window.storage.get(`brand:${email.toLowerCase()}`);
+    return r ? r.value : null;
+  } catch(e) { return null; }
+}
+
+async function saveBrandAssignment(email, brand) {
+  await window.storage.set(`brand:${email.toLowerCase()}`, brand);
+}
+
+async function resolveBrand(email) {
+  if (!email) return null;
+  // Check stored assignment first
+  const stored = await getBrandAssignment(email);
+  if (stored) return stored;
+  // Check domain map
+  const detected = await getBrandForEmail(email);
+  if (detected) return detected;
+  // Check if we should prompt
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (PROMPT_DOMAINS.has(domain) || domain) return null; // will prompt
+  return null;
+}
+
+function showBrandPrompt(email, name, onAssign) {
+  const modal = document.getElementById("brandModal");
+  document.getElementById("brandModalDesc").textContent = `Which brand does ${name || email} work for?`;
+  const opts = document.getElementById("brandOptions");
+  const allBrands = { ...BUILT_IN_BRANDS };
+  if (_customBrands) Object.assign(allBrands, _customBrands);
+  opts.innerHTML = Object.values(allBrands).filter((v,i,a)=>a.indexOf(v)===i).sort().map(brand => `
+    <button class="btn" style="justify-content:center;font-size:12px" onclick="assignBrand('${email}','${brand}',this)">${brand}</button>
+  `).join("") + `<button class="btn" style="justify-content:center;font-size:12px;grid-column:span 2;color:var(--ink-ghost)" onclick="closeModal('brandModal')">Unknown / Skip</button>`;
+  window._brandPromptCallback = onAssign;
+  openModal("brandModal");
+}
+
+async function assignBrand(email, brand, btn) {
+  await saveBrandAssignment(email, brand);
+  closeModal("brandModal");
+  if (window._brandPromptCallback) window._brandPromptCallback(brand);
+  toast(`Assigned "${brand}" to ${email}`);
+  renderAnalytics(); // refresh analytics
+}
+
+// Manage brands modal
+document.getElementById("manageBrandsBtn")?.addEventListener("click", async () => {
+  await renderBrandList();
+  openModal("manageBrandsModal");
+});
+
+async function renderBrandList() {
+  const custom = await getCustomBrands();
+  const all = { ...BUILT_IN_BRANDS, ...custom };
+  document.getElementById("brandList").innerHTML = Object.entries(all).map(([domain, brand]) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:4px;font-size:13px">
+      <span style="color:var(--ink-dim);font-family:var(--mono);font-size:11px">${domain}</span>
+      <span style="color:var(--ink);font-weight:500">${brand}</span>
+      ${BUILT_IN_BRANDS[domain] ? "" : `<button onclick="removeBrand('${domain}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;padding:0 4px">×</button>`}
+    </div>
+  `).join("");
+}
+
+async function addBrand() {
+  const domain = document.getElementById("newBrandDomain").value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const name = document.getElementById("newBrandName").value.trim();
+  if (!domain || !name) { toast("Enter domain and brand name", "error"); return; }
+  const custom = await getCustomBrands();
+  custom[domain] = name;
+  await saveCustomBrands(custom);
+  document.getElementById("newBrandDomain").value = "";
+  document.getElementById("newBrandName").value = "";
+  await renderBrandList();
+  toast(`Added: ${domain} → ${name}`);
+}
+
+async function removeBrand(domain) {
+  const custom = await getCustomBrands();
+  delete custom[domain];
+  await saveCustomBrands(custom);
+  await renderBrandList();
+  toast(`Removed: ${domain}`);
+}
+
+// ============================================================
+// REQUESTER PROFILE
+// ============================================================
+let _profileCache = new Map();
+let _profileLoading = new Set();
+
+async function loadRequesterProfile(ticketId, email) {
+  if (!email || _profileLoading.has(email)) return;
+  if (_profileCache.has(email)) return;
+  _profileLoading.add(email);
+  try {
+    const res = await fetch(`/api/requesterProfile?email=${encodeURIComponent(email)}`);
+    if (res.ok) {
+      const data = await res.json();
+      _profileCache.set(email, data);
+      if (CURRENT_ID === ticketId) renderDetail();
+      // Show brand prompt if needed
+      if (data.found && data.needsBrandPrompt) {
+        const stored = await getBrandAssignment(email);
+        if (!stored) {
+          setTimeout(() => showBrandPrompt(email, data.requester?.first_name + " " + data.requester?.last_name, async (brand) => {
+            data.brand = brand;
+            _profileCache.set(email, data);
+            if (CURRENT_ID === ticketId) renderDetail();
+          }), 2000);
+        }
+      }
+    }
+  } catch(e) {}
+  _profileLoading.delete(email);
+}
+
+function renderRequesterProfile(profile, email) {
+  if (!profile?.found) return "";
+  const s = profile.stats;
+  const ai = profile.aiAssessment;
+  const riskColor = { low: "var(--ok)", medium: "var(--warn)", high: "var(--danger)" }[ai?.riskLevel] || "var(--ink-dim)";
+  const brand = profile.brand;
+
+  return `
+    <div class="detail-section">
+      <h3>Requester Intelligence</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+        ${brand ? `<div style="grid-column:span 2;background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;font-weight:600;color:var(--accent)">🏷️ ${brand}</div>` : ""}
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Tickets</div>
+          <div style="font-size:18px;font-weight:800;color:var(--ink)">${s.total}</div>
+        </div>
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Per 30 Days</div>
+          <div style="font-size:18px;font-weight:800;color:${s.ticketsPer30Days>5?"var(--warn)":"var(--ink)"}">${s.ticketsPer30Days||"—"}</div>
+        </div>
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg Resolution</div>
+          <div style="font-size:18px;font-weight:800;color:var(--ink)">${s.avgResolutionHours ? s.avgResolutionHours+"h" : "—"}</div>
+        </div>
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Top Category</div>
+          <div style="font-size:11px;font-weight:700;color:var(--ink);margin-top:3px">${s.topCategory||"—"}</div>
+        </div>
+      </div>
+      ${ai ? `
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">AI Assessment</span>
+            <span style="background:${riskColor}22;color:${riskColor};padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700">${(ai.riskLevel||"").toUpperCase()} RISK</span>
+            ${ai.trainingOpportunity ? `<span style="background:var(--info)22;color:var(--info);padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700">TRAINING OPP</span>` : ""}
+          </div>
+          <div style="font-size:12px;color:var(--ink-dim);margin-bottom:4px">${escape(ai.pattern||"")}</div>
+          <div style="font-size:12px;color:var(--ink);border-left:2px solid var(--accent);padding-left:7px">${escape(ai.recommendation||"")}</div>
+        </div>
+      ` : ""}
+      <button class="btn ghost" style="font-size:11px;width:100%;justify-content:center" onclick="showBrandPrompt('${email}','${profile.requester?.first_name||""}',async(b)=>{_profileCache.get('${email}') && (_profileCache.get('${email}').brand=b);renderDetail();})">🏷️ Change brand assignment</button>
+    </div>
+  `;
+}
+
+// ============================================================
+// KNOWLEDGE BASE
+// ============================================================
+let _kbData = null;
+
+async function loadKB() {
+  const grid = document.getElementById("kbGrid");
+  if (!grid) return;
+  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading…</div>`;
+  try {
+    const res = await fetch("/api/knowledgeBase?action=list");
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    _kbData = data.articles || [];
+    renderKBGrid(_kbData);
+  } catch(err) {
+    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load KB: ${err.message}</div>`;
+  }
+}
+
+async function searchKB() {
+  const q = document.getElementById("kbSearch")?.value?.trim();
+  const cat = document.getElementById("kbCategory")?.value;
+  if (!q && !cat) { if (_kbData) renderKBGrid(_kbData); return; }
+  try {
+    const params = new URLSearchParams({ action: "search" });
+    if (q) params.set("q", q);
+    if (cat) params.set("category", cat);
+    const res = await fetch("/api/knowledgeBase?" + params);
+    const data = await res.json();
+    renderKBGrid(data.articles || []);
+  } catch(err) {
+    if (_kbData) renderKBGrid(_kbData.filter(a =>
+      (!q || (a.title||"").toLowerCase().includes(q.toLowerCase())) &&
+      (!cat || (a.tags||[]).includes(cat))
+    ));
+  }
+}
+
+function renderKBGrid(articles) {
+  const grid = document.getElementById("kbGrid");
+  const stats = document.getElementById("kbStats");
+  if (stats) {
+    stats.innerHTML = [
+      { label: "Total Articles", val: articles.length, color: "var(--accent)" },
+      { label: "Published", val: articles.filter(a=>a.status===2).length, color: "var(--ok)" },
+      { label: "Drafts", val: articles.filter(a=>a.status===1).length, color: "var(--warn)" },
+    ].map(s => `
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;display:flex;gap:10px;align-items:center">
+        <div style="font-size:20px;font-weight:800;color:${s.color}">${s.val}</div>
+        <div style="font-size:11px;color:var(--ink-dim);font-weight:500">${s.label}</div>
+      </div>
+    `).join("");
+  }
+  if (!articles.length) {
+    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No articles found. Resolve tickets to auto-generate KB entries.</div>`;
+    return;
+  }
+  grid.innerHTML = articles.map(a => {
+    const tags = (a.tags || []).slice(0, 4);
+    const statusBadge = a.status === 2
+      ? `<span style="background:var(--ok-dim);color:var(--ok);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">PUBLISHED</span>`
+      : `<span style="background:var(--warn-dim);color:var(--warn);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">DRAFT</span>`;
+    return `
+      <div onclick="showKBArticle(${JSON.stringify(a).replace(/"/g,'&quot;')})"
+        style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;cursor:pointer;transition:.12s"
+        onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;gap:8px">
+          <div style="font-size:13px;font-weight:700;color:var(--ink);line-height:1.3">${escape(a.title||"Untitled")}</div>
+          ${statusBadge}
+        </div>
+        <div style="font-size:12px;color:var(--ink-dim);line-height:1.5;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+          ${(a.description_text||a.description||"").replace(/<[^>]+>/g," ").trim().slice(0,150)}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          ${tags.map(t=>`<span style="background:var(--panel-2);border:1px solid var(--border);padding:1px 7px;border-radius:20px;font-size:10px;color:var(--ink-dim)">${t}</span>`).join("")}
+        </div>
+        <div style="font-size:10px;color:var(--ink-ghost)">${a.created_at ? new Date(a.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function showKBArticle(article) {
+  document.getElementById("kbArticleTitle").textContent = article.title || "Article";
+  const body = document.getElementById("kbArticleBody");
+  const desc = (article.description || "").replace(/<[^>]+>/g, " ").trim();
+  body.innerHTML = `
+    <div style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap">
+      ${(article.tags||[]).map(t=>`<span style="background:var(--accent-dim);color:var(--accent);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">${t}</span>`).join("")}
+    </div>
+    <div style="font-size:13px;color:var(--ink);line-height:1.7;white-space:pre-wrap">${escape(desc)}</div>
+  `;
+  const link = document.getElementById("kbArticleFsLink");
+  if (link && article.id) link.href = `https://renovationbrands.freshservice.com/support/solutions/articles/${article.id}`;
+  openModal("kbArticleModal");
+}
+
+// Auto-extract KB from ticket when resolving
+async function extractKBFromTicket(ticketId) {
+  try {
+    const res = await fetch("/api/knowledgeBase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "extract", ticketId })
+    });
+    const data = await res.json();
+    if (data.extracted) return data.extracted;
+  } catch(e) {}
+  return null;
+}
+
+// KB refresh button
+document.getElementById("refreshKbBtn")?.addEventListener("click", () => { _kbData = null; loadKB(); });
+
+// ============================================================
+// ANALYTICS — Brand attribution & business impact
+// ============================================================
+const BRAND_COLORS = {
+  "American Tin Ceilings": "#6366f1",
+  "Baseboarders": "#34d399",
+  "Vent Covers Unlimited": "#f59e0b",
+  "Madelyn Carter": "#ec4899",
+  "Trueform Concrete": "#8b5cf6",
+  "RTA Cabinet Store": "#f97316",
+  "Reggio Registers": "#14b8a6",
+  "Hearth Brands": "#ef4444",
+  "Renovation Brands": "#60a5fa",
+  "Unknown": "#4a5370"
+};
+
+const BUSINESS_IMPACT_WEIGHTS = {
+  category: { "NetSuite": 3, "Network": 2, "Employee Onboarding/Offboarding": 2, "Software": 1, "Hardware": 1 },
+  priority: { 4: 4, 3: 3, 2: 2, 1: 1 }
+};
+
+function getBusinessImpactScore(ticket) {
+  const catScore = BUSINESS_IMPACT_WEIGHTS.category[ticket.category] || 1;
+  const prioScore = BUSINESS_IMPACT_WEIGHTS.priority[ticket.priority] || 1;
+  const ageBonus = Math.min(Math.floor((Date.now() - new Date(ticket.created_at)) / 86400000 / 7), 3);
+  return (catScore * 2) + (prioScore * 2) + ageBonus;
+}
+
+async function renderAnalytics() {
+  if (!document.getElementById("mainAnalytics")?.classList.contains("hidden") === false) return;
+  const brandGrid = document.getElementById("brandGrid");
+  const catBreak = document.getElementById("categoryBreakdown");
+  const deflection = document.getElementById("deflectionReport");
+  const impactList = document.getElementById("impactList");
+  if (!brandGrid) return;
+
+  const ACTIVE = new Set([2,3,6]);
+  const tickets = TICKETS.filter(t => ACTIVE.has(t.status));
+
+  // Resolve brands for all tickets
+  const brandCounts = {};
+  for (const t of tickets) {
+    const email = t.requester_name ? null : t.email;
+    let brand = "Unknown";
+    if (t.requester_email || email) {
+      brand = await resolveBrand(t.requester_email || email) || "Unknown";
+    } else if (t.requester_name) {
+      brand = "Unknown";
+    }
+    brandCounts[brand] = (brandCounts[brand] || 0) + 1;
+  }
+
+  // Brand grid
+  brandGrid.innerHTML = Object.entries(brandCounts)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([brand, count]) => {
+      const color = BRAND_COLORS[brand] || "var(--accent)";
+      const pct = Math.round((count / tickets.length) * 100);
+      return `
+        <div style="background:var(--panel);border:1px solid var(--border);border-left:3px solid ${color};border-radius:var(--radius-sm);padding:10px 12px">
+          <div style="font-size:11px;font-weight:700;color:${color};margin-bottom:3px">${brand}</div>
+          <div style="font-size:22px;font-weight:800;color:var(--ink);letter-spacing:-1px">${count}</div>
+          <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${pct}% of active</div>
+          <div style="height:3px;background:var(--border);border-radius:2px;margin-top:6px">
+            <div style="height:3px;background:${color};border-radius:2px;width:${pct}%;transition:.3s"></div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+  // Category breakdown
+  const catCounts = {};
+  tickets.forEach(t => { const c = t.category||"Uncategorized"; catCounts[c]=(catCounts[c]||0)+1; });
+  catBreak.innerHTML = Object.entries(catCounts).sort((a,b)=>b[1]-a[1]).map(([cat,count])=>`
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;font-weight:500;color:var(--ink)">${cat}</span>
+      <span style="font-size:14px;font-weight:700;color:var(--accent)">${count}</span>
+    </div>
+  `).join("");
+
+  // Business impact top 10
+  const scored = tickets.map(t => ({ ...t, impactScore: getBusinessImpactScore(t) }))
+    .sort((a,b) => b.impactScore - a.impactScore).slice(0, 10);
+  impactList.innerHTML = scored.map((t,i) => `
+    <div onclick="selectTicket(${t.id});switchMode('triage')"
+      style="display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:5px;cursor:pointer;transition:.12s"
+      onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="font-size:18px;font-weight:800;color:var(--ink-ghost);text-align:center">${i+1}</div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${escape(t.subject)}</div>
+        <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">#${t.id} · ${t.category||"—"} · ${t.requester_name||"Unknown"}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:16px;font-weight:800;color:${t.impactScore>=8?"var(--danger)":t.impactScore>=5?"var(--warn)":"var(--ok)"}">${t.impactScore}</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">impact</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+document.getElementById("refreshAnalyticsBtn")?.addEventListener("click", renderAnalytics);
+
+// ============================================================
+// RUNBOOKS
+// ============================================================
+let _runbooks = [];
+let _currentRunbook = null;
+let _runbookState = {};
+
+async function loadRunbooks() {
+  try {
+    const res = await fetch("/api/runbook?action=list");
+    const data = await res.json();
+    _runbooks = data.runbooks || [];
+  } catch(e) {}
+}
+
+function getRunbooksForTicket(ticket) {
+  return _runbooks.filter(r =>
+    !ticket.category || r.categories.includes(ticket.category) || r.categories.includes("Software")
+  );
+}
+
+function renderRunbooksPanel(ticket) {
+  const suggested = _runbooks.filter(r => r.categories.includes(ticket.category));
+  if (!suggested.length) return "";
+  return `
+    <div class="detail-section">
+      <h3>⚡ One-Click Runbooks</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ${suggested.map(r => `
+          <button class="btn" style="justify-content:start;gap:8px;font-size:12px" onclick="startRunbook('${r.id}',${ticket.id})">
+            <span>${r.icon}</span><span>${r.name}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+async function startRunbook(runbookId, ticketId) {
+  const runbook = _runbooks.find(r => r.id === runbookId);
+  if (!runbook) return;
+
+  document.getElementById("runbookModalTitle").textContent = `${runbook.icon} ${runbook.name}`;
+  document.getElementById("runbookModalBody").innerHTML = `<div style="text-align:center;padding:30px;color:var(--ink-dim)"><span class="loader"></span> Preparing runbook…</div>`;
+  openModal("runbookModal");
+
+  // Pre-fill email from ticket via API
+  let prefillEmail = "";
+  try {
+    const res = await fetch(`/api/runbook?action=prefill&ticketId=${ticketId}`);
+    const data = await res.json();
+    prefillEmail = data.prefill?.email || "";
+  } catch(e) {}
+
+  _currentRunbook = runbook;
+  _runbookState = {
+    ticketId,
+    currentStep: 0,
+    params: { email: prefillEmail },
+    results: []
+  };
+
+  renderRunbookStep();
+
+  // Auto-execute the first auto step immediately
+  await autoAdvanceRunbook();
+}
+
+async function autoAdvanceRunbook() {
+  const rb = _currentRunbook;
+  const state = _runbookState;
+  while (state.currentStep < rb.steps.length) {
+    const step = rb.steps[state.currentStep];
+    if (step.type !== "auto") break; // stop at confirm steps
+    await executeRunbookStep();
+  }
+}
+
+async function executeRunbookStep() {
+  const rb = _currentRunbook;
+  const state = _runbookState;
+  const stepIdx = state.currentStep;
+  const step = rb.steps[stepIdx];
+  if (!step) return;
+
+  // Collect params from any visible form fields
+  if (step.params) {
+    step.params.forEach(p => {
+      const el = document.getElementById(`rbParam_${p.key}`);
+      if (el) state.params[p.key] = el.value.trim();
+    });
+  }
+
+  // Merge data from previous results into params
+  state.results.forEach(r => { if (r?.data) Object.assign(state.params, r.data); });
+
+  renderRunbookStep(true); // show loading state
+
+  try {
+    const res = await fetch("/api/runbook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        runbookId: rb.id,
+        ticketId: state.ticketId,
+        stepId: step.id,
+        params: { ...state.params, steps: state.results }
+      })
+    });
+    const result = await res.json();
+    state.results[stepIdx] = result;
+    if (result.data) Object.assign(state.params, result.data);
+    state.currentStep++;
+    renderRunbookStep();
+
+    if (state.currentStep >= rb.steps.length) {
+      toast(`✓ Runbook complete: ${rb.name}`);
+      if (CURRENT_ID === state.ticketId) renderDetail();
+      return;
+    }
+
+    // Auto-advance through any subsequent auto steps
+    await autoAdvanceRunbook();
+  } catch(err) {
+    state.results[stepIdx] = { ok: false, message: err.message };
+    renderRunbookStep();
+  }
+}
+
+function renderRunbookStep(loading = false) {
+  const rb = _currentRunbook;
+  const state = _runbookState;
+  const stepIdx = state.currentStep;
+  const body = document.getElementById("runbookModalBody");
+  const hint = document.getElementById("runbookModalHint");
+  const nextBtn = document.getElementById("runbookNextBtn");
+  if (!body) return;
+
+  const isComplete = stepIdx >= rb.steps.length;
+  const currentStep = rb.steps[stepIdx];
+
+  // Steps list
+  const stepsHtml = rb.steps.map((s, i) => {
+    const done = i < stepIdx;
+    const active = i === stepIdx && !isComplete;
+    const result = state.results[i];
+    const isLoading = active && loading;
+    return `
+      <div style="display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:start;
+        padding:8px 10px;border-radius:var(--radius-sm);
+        background:${active?"var(--accent-dim)":"transparent"};margin-bottom:3px">
+        <div style="width:26px;height:26px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:${done?"14px":"11px"};font-weight:800;
+          background:${done?"var(--ok)":active?"var(--accent)":"var(--panel-2)"};
+          color:${done||active?"#fff":"var(--ink-ghost)"}">
+          ${isLoading ? `<span class="loader" style="width:12px;height:12px;border-width:2px"></span>` : done ? "✓" : i+1}
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:${active?"700":"500"};color:${active?"var(--ink)":done?"var(--ink-dim)":"var(--ink-dim)"}">${s.label}</div>
+          ${s.description && active ? `<div style="font-size:11px;color:${s.description.startsWith("⚠")?"var(--warn)":"var(--ink-dim)"};margin-top:2px">${s.description}</div>` : ""}
+          ${result ? `<div style="font-size:11px;color:${result.ok?"var(--ok)":"var(--danger)"};margin-top:3px">${result.ok?"✓":"✗"} ${result.message||result.error||""}</div>` : ""}
+        </div>
+        <div style="font-size:10px;color:var(--ink-ghost);padding-top:3px">${s.type}</div>
+      </div>
+    `;
+  }).join("");
+
+  // Param form for current confirm step
+  let paramsHtml = "";
+  if (!isComplete && currentStep?.params && currentStep.type === "confirm") {
+    paramsHtml = `<div style="margin-top:10px;padding:12px;background:var(--panel-2);border-radius:var(--radius-sm);border:1px solid var(--border)">` +
+      currentStep.params.map(p => `
+        <div style="margin-bottom:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${p.label}</div>
+          ${p.type === "select"
+            ? `<select id="rbParam_${p.key}" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none">
+                ${(p.options||[]).map(o=>`<option>${o}</option>`).join("")}
+              </select>`
+            : `<input type="text" id="rbParam_${p.key}"
+                value="${state.params[p.key]||p.default||""}"
+                placeholder="${p.placeholder||""}"
+                style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none"/>`
+          }
+        </div>
+      `).join("") + "</div>";
+  }
+
+  // Summary of pre-filled email
+  const emailPreview = state.params.email
+    ? `<div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--ink-dim)">👤 Acting on: <strong style="color:var(--ink)">${state.params.email}</strong></div>`
+    : "";
+
+  body.innerHTML = emailPreview + stepsHtml + paramsHtml;
+
+  if (isComplete) {
+    hint.textContent = "All steps completed successfully";
+    nextBtn?.classList.add("hidden");
+  } else if (currentStep?.type === "confirm") {
+    hint.textContent = `Step ${stepIdx+1} of ${rb.steps.length}: ${currentStep.label}`;
+    nextBtn?.classList.remove("hidden");
+    nextBtn && (nextBtn.textContent = stepIdx < rb.steps.length - 1 ? "Execute →" : "Complete ✓");
+    nextBtn && (nextBtn.disabled = false);
+  } else {
+    hint.textContent = loading ? "Executing…" : `Step ${stepIdx+1} of ${rb.steps.length}`;
+    nextBtn?.classList.add("hidden");
+  }
+}
+
+document.getElementById("runbookNextBtn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("runbookNextBtn");
+  btn.disabled = true;
+  btn.textContent = "Executing…";
+  await executeRunbookStep();
+});
+
+// Load runbooks on boot
+loadRunbooks();
+
+// ============================================================
+// MAC FLEET — KANDJI
+// ============================================================
+let _fleetData = null;
+let _fleetFilter = "all";
+let _fleetPage = 0;
+const FLEET_PAGE_SIZE = 12;
+let _currentMacDevice = null;
+
+// Add fleet filter button styles
+(function(){
+  const s = document.createElement('style');
+  s.textContent = `.fleet-filter-btn{background:var(--panel);border:1px solid var(--border);border-radius:20px;color:var(--ink-dim);padding:5px 12px;font-size:12px;font-family:var(--sans);cursor:pointer;transition:.15s;white-space:nowrap}.fleet-filter-btn:hover{border-color:var(--border-hot);color:var(--ink)}.fleet-filter-btn.active{background:var(--accent-dim,rgba(99,102,241,.15));border-color:var(--accent);color:var(--accent)}`;
+  document.head.appendChild(s);
+})();
+
+function setFleetFilter(filter, btn) {
+  _fleetFilter = filter;
+  _fleetPage = 0;
+  document.querySelectorAll('.fleet-filter-btn').forEach(b => b.classList.remove('active'));
+  btn?.classList.add('active');
+  renderFleetList();
+}
+
+async function loadFleet() {
+  const grid = document.getElementById("fleetGrid");
+  if (!grid) return;
+  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…</div>`;
+  document.getElementById("fleetSummaryStrip").innerHTML = "";
+  document.getElementById("fleetPagination").innerHTML = "";
+  try {
+    const res = await fetch("/api/kandji?action=fleet");
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    _fleetData = await res.json();
+    renderFleetSummary(_fleetData.summary);
+    renderFleetList();
+  } catch(err) {
+    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load Mac fleet: ${err.message}<br><span style="color:var(--ink-dim);font-size:11px;margin-top:6px;display:block">Check KANDJI_API_KEY and KANDJI_SUBDOMAIN in environment variables</span></div>`;
+  }
+}
+
+function renderFleetSummary(s) {
+  const strip = document.getElementById("fleetSummaryStrip");
+  if (!strip || !s) return;
+  // Only count Macs for stats
+  const macs = (_fleetData?.devices||[]).filter(d => isMac(d));
+  const macTotal = macs.length;
+  const filevaultOk = macs.filter(d => d.filevault_enabled).length;
+  const checkedIn = macs.filter(d => (d._compliance?.daysSinceCheckIn||999) <= 7).length;
+  const missing = macs.filter(d => d.is_missing).length;
+
+  strip.innerHTML = [
+    { label: "Total Macs", val: macTotal, color: "var(--accent)", sub: `${s.total} total devices` },
+    { label: "FileVault", val: macTotal ? Math.round(filevaultOk/macTotal*100)+"%" : "—", color: filevaultOk===macTotal?"var(--ok)":"var(--danger)", sub: `${filevaultOk}/${macTotal} encrypted` },
+    { label: "Checked In", val: macTotal ? Math.round(checkedIn/macTotal*100)+"%" : "—", color: checkedIn/macTotal>=.8?"var(--ok)":"var(--warn)", sub: "within 7 days" },
+    { label: "Stale/Missing", val: missing, color: missing>0?"var(--danger)":"var(--ok)", sub: "offline / not checking in" },
+    { label: "Proactive", val: "Active", color: "var(--accent)", sub: "scanning every 30min" },
+  ].map(item => `
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
+      <div style="font-size:24px;font-weight:800;color:${item.color};letter-spacing:-1px;line-height:1">${item.val}</div>
+      <div style="font-size:10px;color:var(--ink-ghost);margin-top:2px">${item.sub}</div>
+    </div>
+  `).join("");
+}
+
+function isMac(d) {
+  const model = (d.model||"").toLowerCase();
+  const name = (d.device_name||"").toLowerCase();
+  return model.includes("mac") || name.includes("mac") || (!model.includes("ipad") && !model.includes("iphone") && !name.includes("ipad") && !name.includes("iphone"));
+}
+
+function renderFleetList() {
+  const grid = document.getElementById("fleetGrid");
+  const pagination = document.getElementById("fleetPagination");
+  const countEl = document.getElementById("fleetCount");
+  if (!grid || !_fleetData) return;
+
+  const query = document.getElementById("fleetSearch")?.value?.toLowerCase() || "";
+  let devices = _fleetData.devices || [];
+
+  // Apply filters
+  if (_fleetFilter === "mac") devices = devices.filter(isMac);
+  else if (_fleetFilter === "stale") devices = devices.filter(d => (d._compliance?.daysSinceCheckIn||999) >= 5);
+  else if (_fleetFilter === "filevault") devices = devices.filter(d => !d.filevault_enabled);
+  else if (_fleetFilter === "issues") devices = devices.filter(d => !d._compliance?.compliant);
+  else if (_fleetFilter === "offline") devices = devices.filter(d => d.is_missing);
+
+  // Search
+  if (query) {
+    devices = devices.filter(d =>
+      (d.device_name||"").toLowerCase().includes(query) ||
+      (d.serial_number||"").toLowerCase().includes(query) ||
+      (d.user?.name||"").toLowerCase().includes(query) ||
+      (d.user?.email||"").toLowerCase().includes(query) ||
+      (d.model||"").toLowerCase().includes(query)
+    );
+  }
+
+  const total = devices.length;
+  const totalPages = Math.ceil(total / FLEET_PAGE_SIZE);
+  _fleetPage = Math.min(_fleetPage, Math.max(0, totalPages - 1));
+  const start = _fleetPage * FLEET_PAGE_SIZE;
+  const pageDevices = devices.slice(start, start + FLEET_PAGE_SIZE);
+
+  if (countEl) countEl.textContent = `${total} device${total!==1?"s":""}`;
+
+  if (!pageDevices.length) {
+    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No devices match filters</div>`;
+    pagination.innerHTML = "";
+    return;
+  }
+
+  grid.innerHTML = pageDevices.map(d => {
+    const c = d._compliance || {};
+    const mac = isMac(d);
+    const borderColor = d.is_missing ? "var(--danger)" : !c.compliant ? "var(--warn)" : "var(--border)";
+    const days = c.daysSinceCheckIn;
+    const daysLabel = days === null ? "never" : days === 0 ? "today" : `${days}d ago`;
+    const statusBadge = d.is_missing
+      ? `<span style="background:var(--danger-dim);color:var(--danger);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">OFFLINE</span>`
+      : !c.compliant
+      ? `<span style="background:var(--warn-dim);color:var(--warn);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">ISSUES</span>`
+      : `<span style="background:var(--ok-dim);color:var(--ok);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">✓ OK</span>`;
+
+    return `
+      <div onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})"
+        style="background:var(--panel);border:1px solid ${borderColor};border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:10px"
+        onmouseover="this.style.borderColor='${d.is_missing?"var(--danger)":!c.compliant?"var(--warn)":"var(--border-hot)"}'"
+        onmouseout="this.style.borderColor='${borderColor}'">
+
+        <!-- Top row: name + badge -->
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:2px">${d.device_name||"Unknown Device"}</div>
+            <div style="font-size:12px;color:var(--ink-dim)">${d.model||"Unknown model"}</div>
+          </div>
+          ${statusBadge}
+        </div>
+
+        <!-- User -->
+        ${d.user ? `
+        <div style="display:flex;align-items:center;gap:8px;background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim,rgba(99,102,241,.2));display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">👤</div>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--ink)">${d.user.name||""}</div>
+            <div style="font-size:11px;color:var(--ink-dim)">${d.user.email||""}</div>
+          </div>
+        </div>` : `<div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px;font-size:12px;color:var(--ink-ghost)">No user assigned</div>`}
+
+        <!-- Stats row -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">macOS</div>
+            <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.os_version||"—"}</div>
+          </div>
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">Check-in</div>
+            <div style="font-size:12px;font-weight:600;color:${days>=5?"var(--warn)":"var(--ink)"}">${daysLabel}</div>
+          </div>
+          <div style="background:${d.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">FileVault</div>
+            <div style="font-size:12px;font-weight:600;color:${d.filevault_enabled?"var(--ok)":"var(--danger)"}">${d.filevault_enabled?"ON":"OFF"}</div>
+          </div>
+        </div>
+
+        <!-- Issues -->
+        ${c.issues?.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${c.issues.map(i=>`<span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--warn-dim);color:var(--warn)">⚠ ${i}</span>`).join("")}</div>` : ""}
+
+        <!-- Actions -->
+        <div style="display:flex;gap:6px;margin-top:2px" onclick="event.stopPropagation()">
+          <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:5px" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳ Check-in</button>
+          <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:5px" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">📋 Details</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Pagination
+  if (totalPages > 1) {
+    pagination.innerHTML = `
+      <button class="btn ghost" style="font-size:12px;padding:5px 10px" ${_fleetPage===0?"disabled":""} onclick="_fleetPage--;renderFleetList()">← Prev</button>
+      <span style="font-size:12px;color:var(--ink-dim)">Page ${_fleetPage+1} of ${totalPages}</span>
+      <button class="btn ghost" style="font-size:12px;padding:5px 10px" ${_fleetPage>=totalPages-1?"disabled":""} onclick="_fleetPage++;renderFleetList()">Next →</button>
+    `;
+  } else {
+    pagination.innerHTML = "";
+  }
+}
+
+function filterFleetDevices(filter) {
+  _fleetFilter = filter;
+  _fleetPage = 0;
+  renderFleetList();
+}
+function renderFleetSummary(s) {
+  const strip = document.getElementById("fleetSummaryStrip");
+  if (!strip || !s) return;
+  strip.innerHTML = [
+    { label: "Total Macs", val: s.total||0, color: "var(--accent)", sub: "managed by Kandji" },
+    { label: "FileVault", val: (s.filevaultPct||0)+"%", color: s.filevaultPct>=90?"var(--ok)":"var(--warn)", sub: "encryption enabled" },
+    { label: "Checked In", val: (s.checkedInPct||0)+"%", color: s.checkedInPct>=80?"var(--ok)":"var(--warn)", sub: "within 7 days" },
+    { label: "Stale/Missing", val: s.missingCount||0, color: s.missingCount>0?"var(--danger)":"var(--ok)", sub: "offline / not checking in" },
+    { label: "Proactive", val: "Active", color: "var(--accent)", sub: "scanning every 30min" },
+  ].map(item => `
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
+      <div style="font-size:24px;font-weight:800;color:${item.color};letter-spacing:-1px;line-height:1">${item.val}</div>
+      <div style="font-size:10px;color:var(--ink-ghost);margin-top:2px">${item.sub}</div>
+    </div>
+  `).join("");
+}
+
+function renderFleetOsChart(osVersions) {
+  const el = document.getElementById("fleetOsChart");
+  if (!el || !osVersions.length) return;
+  el.innerHTML = osVersions.map(o => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--ink);min-width:100px;font-weight:500">${o.version}</div>
+      <div style="flex:1;height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden">
+        <div style="height:100%;background:var(--accent);width:${o.pct}%;border-radius:4px;transition:.3s"></div>
+      </div>
+      <div style="font-size:11px;color:var(--ink-dim);min-width:40px;text-align:right">${o.count} (${o.pct}%)</div>
+    </div>
+  `).join("");
+}
+
+async function showMacDeviceDetail(device) {
+  _currentMacDevice = device;
+  document.getElementById("macDevTitle").textContent = device.device_name || "Mac Details";
+  document.getElementById("macDevForceCheckin").classList.remove("hidden");
+  document.getElementById("macDevForceCheckin").onclick = () => runMdmAction("checkin", device.device_id, device.device_name);
+  const lockBtn = document.getElementById("macDevLock");
+  lockBtn.style.display = "block";
+  lockBtn.onclick = () => runMdmAction("lock", device.device_id, device.device_name);
+
+  const body = document.getElementById("macDevBody");
+  body.innerHTML = `<div style="text-align:center;padding:30px"><div class="loader"></div></div>`;
+  openModal("macDeviceModal");
+
+  try {
+    const res = await fetch(`/api/kandji?action=device&serial=${encodeURIComponent(device.serial_number||"")}`);
+    const data = await res.json();
+    renderMacDeviceModal(device, data);
+  } catch(e) {
+    renderMacDeviceModal(device, {});
+  }
+}
+
+function renderMacDeviceModal(device, details) {
+  const c = device._compliance || {};
+  const d = details.detail || {};
+  const apps = details.apps || [];
+  const securityApps = apps.filter(a => /crowdstrike|sentinel|defender|jamf|kandji|carbon/i.test(a.app_name||a.name||""));
+
+  document.getElementById("macDevBody").innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Model</div>
+        <div style="font-size:12px;font-weight:600;color:var(--ink)">${device.model||"—"}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">macOS</div>
+        <div style="font-size:12px;font-weight:600;color:var(--ink)">${device.os_version||"—"}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Serial</div>
+        <div style="font-size:12px;font-family:var(--mono);color:var(--accent)">${device.serial_number||"—"}</div>
+      </div>
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Last Check-in</div>
+        <div style="font-size:12px;color:${c.daysSinceCheckIn>=5?"var(--warn)":"var(--ink)"}">${device.last_check_in ? new Date(device.last_check_in).toLocaleString() : "Never"}</div>
+      </div>
+    </div>
+
+    <!-- Security posture -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">Security Posture</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">
+        <span style="padding:3px 8px;border-radius:20px;font-size:11px;background:${device.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};color:${device.filevault_enabled?"var(--ok)":"var(--danger)"}">${device.filevault_enabled?"🔒 FileVault ON":"🔓 FileVault OFF"}</span>
+        ${d.system_overview?.storage ? `<span style="padding:3px 8px;border-radius:20px;font-size:11px;background:var(--panel-2);color:var(--ink-dim)">💾 ${d.system_overview.storage}</span>` : ""}
+        ${device.is_missing ? `<span style="padding:3px 8px;border-radius:20px;font-size:11px;background:var(--danger-dim);color:var(--danger)">📵 OFFLINE/MISSING</span>` : ""}
+      </div>
+    </div>
+
+    <!-- Compliance issues -->
+    ${c.issues?.length ? `
+    <div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--warn);margin-bottom:5px">⚠ Compliance Issues</div>
+      ${c.issues.map(i => `<div style="font-size:12px;color:var(--ink-dim)">• ${i}</div>`).join("")}
+    </div>` : ""}
+
+    <!-- User info -->
+    ${device.user ? `
+    <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:12px">
+      <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Assigned User</div>
+      <div style="font-size:12px;font-weight:600;color:var(--info)">👤 ${device.user.name||""}</div>
+      <div style="font-size:11px;color:var(--ink-dim)">${device.user.email||""}</div>
+    </div>` : ""}
+
+    <!-- Security apps -->
+    ${securityApps.length ? `
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">Security Software</div>
+      ${securityApps.map(a => `<div style="font-size:11px;color:var(--ok);padding:2px 0">✓ ${a.app_name||a.name} ${a.version||""}</div>`).join("")}
+    </div>` : ""}
+
+    <!-- MDM actions -->
+    <div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">MDM Actions</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <button class="btn" style="justify-content:center;font-size:12px" onclick="runMdmAction('checkin','${device.device_id}','${(device.device_name||"").replace(/'/g,"\\'")}')">⟳ Force Check-in</button>
+        <button class="btn" style="justify-content:center;font-size:12px" onclick="runMdmAction('restart','${device.device_id}','${(device.device_name||"").replace(/'/g,"\\'")}')">↺ Restart</button>
+        <button class="btn" style="justify-content:center;font-size:12px;color:var(--warn);border-color:var(--warn)" onclick="runMdmAction('lock','${device.device_id}','${(device.device_name||"").replace(/'/g,"\\'")}')">🔒 Lock Device</button>
+        <button class="btn" style="justify-content:center;font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="if(confirm('⚠️ This will WIPE all data. Are you sure?'))runMdmAction('wipe','${device.device_id}','${(device.device_name||"").replace(/'/g,"\\'")}')">⚠️ Remote Wipe</button>
+      </div>
+    </div>
+  `;
+}
+
+async function runMdmAction(action, deviceId, deviceName) {
+  const labels = { checkin: "Force check-in", lock: "Lock", restart: "Restart", wipe: "Wipe" };
+  toast(`Sending MDM command: ${labels[action]}…`, "info");
+  try {
+    const res = await fetch("/api/kandji", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, deviceId })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toast(`✓ ${labels[action]} command sent to ${deviceName}`);
+    } else {
+      toast(`✗ MDM command failed: ${data.error||"unknown error"}`, "error");
+    }
+  } catch(e) {
+    toast(`✗ MDM error: ${e.message}`, "error");
+  }
+}
+
+document.getElementById("refreshFleetBtn")?.addEventListener("click", () => { _fleetData = null; loadFleet(); });
+
+// ============================================================
+// SCREENCONNECT — SESSION BUTTON IN TICKET DETAIL
+// ============================================================
+let _scSessions = new Map(); // machineNameOrEmail -> sessions
+
+async function loadScreenConnectContext(ticketId, ticket) {
+  const host = document.getElementById(`scCtx_${ticketId}`);
+  if (!host) return;
+
+  const name = ticket.requester_name || "";
+  const email = ticket.requester_email || ticket.email || "";
+  const searchTerm = name.split(" ")[0] || email.split("@")[0] || "";
+
+  if (!searchTerm) {
+    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">No requester name to search</div>`;
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(searchTerm)}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const sessions = data.sessions || [];
+    _scSessions.set(ticketId, sessions);
+
+    if (!sessions.length) {
+      host.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No ScreenConnect sessions found for "${searchTerm}"</div>`;
+      return;
+    }
+
+    const active = sessions.filter(s => s.isActive);
+    host.innerHTML = `
+      <div style="font-size:12px;color:var(--ink-dim);margin-bottom:8px">
+        ${sessions.length} session(s) found · ${active.length > 0 ? `<span style="color:var(--ok)">● ${active.length} active now</span>` : "no active sessions"}
+      </div>
+      ${sessions.slice(0, 3).map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:5px">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--ink)">${s.name||s.sessionId}</div>
+            ${s.isActive ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>` : ""}
+          </div>
+          <a href="${s.launchUrl}" target="_blank" class="btn primary" style="font-size:11px;padding:4px 10px;text-decoration:none">🖥️ Connect</a>
+        </div>
+      `).join("")}
+    `;
+  } catch(e) {
+    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">ScreenConnect unavailable: ${e.message}</div>`;
+  }
+}
+
+// ============================================================
+// KANDJI DEVICE CONTEXT IN TICKETS
+// ============================================================
+async function loadKandjiTicketContext(ticketId, ticket) {
+  const host = document.getElementById(`kandjiCtx_${ticketId}`);
+  if (!host) return;
+
+  const email = ticket.requester_email || ticket.email || ticket.custom_fields?.employee_email || "";
+  if (!email) {
+    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">No email to look up device</div>`;
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/kandji?action=device&email=${encodeURIComponent(email)}`);
+    const data = await res.json();
+
+    if (!data.found) {
+      host.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No Mac found for ${email} in Kandji</div>`;
+      return;
+    }
+
+    const d = data.device;
+    const c = d._compliance || {};
+    const daysLabel = c.daysSinceCheckIn !== null ? `${c.daysSinceCheckIn}d ago` : "never";
+
+    host.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;margin-bottom:2px">Device</div>
+          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.device_name||"Unknown"}</div>
+          <div style="font-size:10px;color:var(--ink-dim)">${d.model||""}</div>
+        </div>
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;margin-bottom:2px">macOS</div>
+          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.os_version||"—"}</div>
+          <div style="font-size:10px;color:var(--ink-dim)">Last check-in: ${daysLabel}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="padding:2px 8px;border-radius:20px;font-size:10px;background:${d.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};color:${d.filevault_enabled?"var(--ok)":"var(--danger)"}">${d.filevault_enabled?"🔒 FileVault ON":"🔓 FileVault OFF"}</span>
+        ${c.issues?.length ? c.issues.map(i=>`<span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--warn-dim);color:var(--warn)">⚠ ${i}</span>`).join("") : `<span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--ok-dim);color:var(--ok)">✓ Compliant</span>`}
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn" style="font-size:11px;padding:4px 10px" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳ Force Check-in</button>
+        <button class="btn" style="font-size:11px;padding:4px 10px" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">📋 Full details</button>
+      </div>
+    `;
+  } catch(e) {
+    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">Kandji unavailable: ${e.message}</div>`;
+  }
+}
+
+// ============================================================
+// MDM RUNBOOKS — add to existing runbook list
+// ============================================================
+const MDM_RUNBOOKS = [
+  {
+    id: "mdm-checkin",
+    name: "Force MDM Check-in",
+    icon: "⟳",
+    categories: ["Hardware", "Software"],
+    description: "Force the user's Mac to check in with Kandji MDM",
+    steps: [
+      { id: "find-mac", label: "Find Mac by requester email", type: "auto" },
+      { id: "send-checkin", label: "Send MDM check-in command", type: "confirm" },
+      { id: "notify-note", label: "Add note to ticket", type: "auto" }
+    ]
+  },
+  {
+    id: "mdm-lock",
+    name: "Lock Mac",
+    icon: "🔒",
+    categories: ["Employee Onboarding/Offboarding"],
+    description: "Remotely lock the user's Mac via MDM",
+    steps: [
+      { id: "find-mac", label: "Find Mac by requester email", type: "auto" },
+      { id: "send-lock", label: "Send MDM lock command", type: "confirm", description: "⚠️ This immediately locks the Mac" },
+      { id: "notify-note", label: "Add note to ticket", type: "auto" }
+    ]
+  },
+  {
+    id: "mdm-wipe",
+    name: "Remote Wipe Mac",
+    icon: "⚠️",
+    categories: ["Employee Onboarding/Offboarding"],
+    description: "Remotely erase the user's Mac — use for offboarding",
+    steps: [
+      { id: "find-mac", label: "Find Mac by requester email", type: "auto" },
+      { id: "send-wipe", label: "Send MDM erase command", type: "confirm", description: "⚠️ THIS WILL ERASE ALL DATA. Only use for offboarding." },
+      { id: "notify-note", label: "Add note to ticket", type: "auto" }
+    ]
+  }
+];
+
+// Patch MDM runbooks into the runbook execution engine
+const _origRunStep = window._runStep;
+async function executeMdmRunbookStep(stepId, params, ticketId) {
+  const email = params.email;
+  switch(stepId) {
+    case "find-mac": {
+      if (!email) return { ok: false, message: "No email found on ticket" };
+      const res = await fetch(`/api/kandji?action=device&email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+      if (!data.found) return { ok: false, message: `No Mac found for ${email} in Kandji` };
+      return { ok: true, message: `Found: ${data.device.device_name} (${data.device.serial_number})`, data: { deviceId: data.device.device_id, deviceName: data.device.device_name } };
+    }
+    case "send-checkin":
+      await fetch("/api/kandji", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"checkin", deviceId: params.deviceId }) });
+      return { ok: true, message: `Check-in command sent to ${params.deviceName}` };
+    case "send-lock":
+      await fetch("/api/kandji", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"lock", deviceId: params.deviceId }) });
+      return { ok: true, message: `Lock command sent to ${params.deviceName}` };
+    case "send-wipe":
+      await fetch("/api/kandji", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"wipe", deviceId: params.deviceId }) });
+      return { ok: true, message: `Wipe command sent to ${params.deviceName} — device will erase on next connection` };
+    default:
+      return null; // fall through to regular runbook engine
+  }
+}
+
+// Hook MDM runbooks into loadRunbooks
+const _origLoadRunbooks = loadRunbooks;
+async function loadRunbooks() {
+  await _origLoadRunbooks();
+  _runbooks = [...(_runbooks || []), ...MDM_RUNBOOKS];
+}
+
+// Mac Fleet tab mode switch
+document.querySelector('[data-mode="fleet"]')?.addEventListener("click", () => {
+  if (!_fleetData) loadFleet();
+});
+
+// session clock
+function updateClock(){
+  const d = new Date();
+  $("#sessionTime").textContent = d.toLocaleTimeString("en-US",{hour12:false});
+}
+setInterval(updateClock,1000); updateClock();
+
+// ============================================================
+// BOOT
+// ============================================================
+(async ()=>{
+  await loadSavedViews();
+  LAST_SEEN_TIMESTAMP = await storeGet("last_seen_ts");
+  await loadPrincipal();
+  await fetchTickets();
+  // Auto-refresh every 60 seconds
+  setInterval(()=>fetchTickets({silent:true}), 60000);
+})();
+</script>
+</body>
+</html>
