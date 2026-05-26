@@ -5197,6 +5197,7 @@ async function loadFleet() {
   } catch(err) {
     grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load Mac fleet: ${err.message}<br><span style="color:var(--ink-dim);font-size:11px;margin-top:6px;display:block">Check KANDJI_API_KEY and KANDJI_SUBDOMAIN in environment variables</span></div>`;
   }
+}
 
 function renderFleetSummary(s) {
   const strip = document.getElementById("fleetSummaryStrip");
@@ -5352,21 +5353,6 @@ function filterFleetDevices(filter) {
   _fleetPage = 0;
   renderFleetList();
 }
-  const grid = document.getElementById("fleetGrid");
-  if (!grid) return;
-  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…</div>`;
-  try {
-    const res = await fetch("/api/kandji?action=fleet");
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    _fleetData = await res.json();
-    renderFleetSummary(_fleetData.summary);
-    renderFleetOsChart(_fleetData.summary?.osVersions || []);
-    renderFleetList();
-  } catch(err) {
-    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load Mac fleet: ${err.message}<br><span style="color:var(--ink-dim);font-size:11px;margin-top:6px;display:block">Check KANDJI_API_KEY and KANDJI_SUBDOMAIN in environment variables</span></div>`;
-  }
-}
-
 function renderFleetSummary(s) {
   const strip = document.getElementById("fleetSummaryStrip");
   if (!strip || !s) return;
