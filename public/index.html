@@ -2992,6 +2992,8 @@ function switchMode(mode){
 // DATA LOADING
 // ============================================================
 function normalizeTicket(t){
+  const requesterEmail = t.requester?.email || t.requester_email || t.email || null;
+  const requesterName = t.requester_name || (t.requester && (t.requester.name || `${t.requester.first_name||""} ${t.requester.last_name||""}`.trim() || t.requester.email)) || null;
   return {
     id: t.id,
     subject: t.subject||"",
@@ -2999,7 +3001,8 @@ function normalizeTicket(t){
     status: t.status||2,
     priority: t.priority||2,
     requester_id: t.requester_id,
-    requester_name: t.requester_name || (t.requester && (t.requester.name || t.requester.email)) || null,
+    requester_name: requesterName,
+    requester_email: requesterEmail,
     responder_id: t.responder_id,
     responder_name: t.responder_name || (t.responder && t.responder.name) || null,
     category: t.category||"",
