@@ -963,6 +963,9 @@
     <!-- Summary strip -->
     <div id="networkSummaryStrip" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px"></div>
 
+    <!-- AI fleet narrative -->
+    <div id="networkOrgNarrative"></div>
+
     <!-- Two column layout: grid + drill-down -->
     <div style="display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start">
 
@@ -1135,6 +1138,24 @@
         <button class="btn primary hidden" id="macDevForceCheckin">⟳ Force Check-in</button>
         <button class="btn" id="macDevLock" style="color:var(--warn);border-color:var(--warn);display:none">🔒 Lock</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MERAKI DEEP DEVICE MODAL -->
+<div class="modal-back" id="merakiDeviceModal">
+  <div class="modal" style="width:720px;max-width:95vw">
+    <div class="modal-hd">
+      <div>
+        <h2 id="merakiDevTitle">Device Detail</h2>
+        <div id="merakiDevSubtitle" style="font-size:11px;color:var(--ink-dim);margin-top:2px"></div>
+      </div>
+      <button class="close" data-close="merakiDeviceModal">×</button>
+    </div>
+    <div class="modal-body" id="merakiDevBody" style="padding:0;max-height:75vh;overflow-y:auto"></div>
+    <div class="modal-ft">
+      <div id="merakiDevAI" style="font-size:12px;color:var(--ink-dim);flex:1"></div>
+      <button class="btn ghost" data-close="merakiDeviceModal">Close</button>
     </div>
   </div>
 </div>
@@ -3958,15 +3979,16 @@ function uplinkPerfBadge(perf) {
   return `<span style="color:var(--ok);font-size:10px">✓ ${latency}ms</span>`;
 }
 
+
 async function loadNetwork() {
   const grid = document.getElementById("networkGrid");
-  const strip = document.getElementById("networkSummaryStrip");
   if (!grid) return;
   grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Meraki data…</div>`;
+  document.getElementById("networkSummaryStrip").innerHTML = "";
 
   try {
     const res = await fetch("/api/merakiContext?type=overview");
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`${res.status}`);
     _merakiData = await res.json();
     const el = document.getElementById("netLastUpdated");
     if (el) el.textContent = `updated ${new Date().toLocaleTimeString()}`;
@@ -3974,7 +3996,7 @@ async function loadNetwork() {
   } catch(err) {
     grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">
       Failed to load Meraki: ${err.message}<br>
-      <span style="color:var(--ink-dim);font-size:11px;display:block;margin-top:6px">Check MERAKI_API_KEY in environment variables</span>
+      <span style="color:var(--ink-dim);font-size:11px;margin-top:6px;display:block">Check MERAKI_API_KEY in environment variables</span>
     </div>`;
   }
 }
@@ -3982,14 +4004,16 @@ async function loadNetwork() {
 function renderNetwork(data) {
   const strip = document.getElementById("networkSummaryStrip");
   const s = data.summary || {};
+  const uptimePct = s.total > 0 ? Math.round((s.online / s.total) * 100) : 100;
+
   if (strip) {
     strip.innerHTML = [
-      { label: "Total Devices", val: s.total||0, color: "var(--ink)", sub: `across ${s.networks||0} sites` },
-      { label: "Online", val: s.online||0, color: "var(--ok)", sub: "devices healthy" },
-      { label: "Offline", val: s.offline||0, color: s.offline>0?"var(--danger)":"var(--ink-dim)", sub: s.offline>0?"needs attention":"" },
+      { label: "Total Devices", val: s.total||0, color: "var(--ink)", sub: `${s.networks||0} sites` },
+      { label: "Online", val: s.online||0, color: "var(--ok)", sub: "healthy" },
+      { label: "Offline", val: s.offline||0, color: s.offline>0?"var(--danger)":"var(--ink-dim)", sub: s.offline>0?"action needed":"" },
       { label: "Alerting", val: s.alerting||0, color: s.alerting>0?"var(--warn)":"var(--ink-dim)", sub: s.alerting>0?"check dashboard":"" },
+      { label: "Fleet Uptime", val: uptimePct+"%", color: uptimePct>=99?"var(--ok)":uptimePct>=95?"var(--warn)":"var(--danger)", sub: "device availability" },
       { label: "Active Alerts", val: s.activeAlerts||0, color: s.activeAlerts>0?"var(--warn)":"var(--ink-dim)", sub: "Meraki alerts" },
-      { label: "Uptime", val: s.total>0?Math.round(((s.online||0)/s.total)*100)+"%":"—", color: s.offline>0?"var(--warn)":"var(--ok)", sub: "device availability" },
     ].map(item => `
       <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
@@ -3998,6 +4022,21 @@ function renderNetwork(data) {
       </div>
     `).join("");
   }
+
+  // Show org-level AI narrative if present
+  const narrativeEl = document.getElementById("networkOrgNarrative");
+  if (narrativeEl) {
+    if (data.orgNarrative) {
+      narrativeEl.innerHTML = `
+        <div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:start">
+          <span style="font-size:16px;flex-shrink:0">🤖</span>
+          <div style="font-size:13px;color:var(--ink);line-height:1.6">${data.orgNarrative}</div>
+        </div>`;
+    } else {
+      narrativeEl.innerHTML = "";
+    }
+  }
+
   renderNetworkGrid(data.networks || []);
 }
 
@@ -4014,7 +4053,7 @@ function renderNetworkGrid(networks) {
   }
 
   if (!filtered.length) {
-    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No sites match your search</div>`;
+    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No sites match</div>`;
     return;
   }
 
@@ -4023,77 +4062,105 @@ function renderNetworkGrid(networks) {
     const borderColor = n.summary.offline > 0 ? "var(--danger)" : n.summary.alerting > 0 ? "var(--warn)" : "var(--border)";
     const isSelected = _selectedNetworkId === n.networkId;
 
-    // Show top 4 devices only in card
-    const deviceRows = n.devices.slice(0, 4).map(d => `
-      <div style="display:grid;grid-template-columns:18px 1fr auto;gap:7px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:12px">${DEVICE_TYPE_ICON[d.productType]||"📟"}</span>
-        <div>
-          <div style="font-size:11px;font-weight:600;color:${d.status==="offline"?"var(--danger)":d.status==="alerting"?"var(--warn)":"var(--ink)"}">${d.name||d.serial}</div>
-          <div style="font-size:10px;color:var(--ink-ghost)">${d.model||""}</div>
+    const deviceRows = n.devices.slice(0, 6).map(d => {
+      const hasDegradedUplink = (d.uplinks||[]).some(u => u.status !== "active");
+      return `
+        <div onclick="drillDownNetwork('${n.networkId}','${escape(n.networkName)}')"
+          style="display:grid;grid-template-columns:18px 1fr auto auto;gap:8px;align-items:center;padding:6px 8px;border-radius:var(--radius-sm);cursor:pointer;transition:.12s"
+          onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
+          <span style="font-size:13px">${DEVICE_TYPE_ICON[d.productType]||"📟"}</span>
+          <div style="min-width:0">
+            <div style="font-size:12px;font-weight:600;color:${d.status==="offline"?"var(--danger)":d.status==="alerting"?"var(--warn)":"var(--ink)"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.name||d.serial}</div>
+            <div style="font-size:10px;color:var(--ink-ghost)">${d.model||""}</div>
+          </div>
+          ${d.productType==="appliance" && d.uplinks?.length ? `
+            <div style="font-size:10px;color:${hasDegradedUplink?"var(--danger)":"var(--ink-dim)"}">
+              ${d.uplinks.filter(u=>u.status==="active").length}/${d.uplinks.length} WAN
+            </div>` : `<div></div>`}
+          ${merakiStatusBadge(d.status)}
         </div>
-        ${merakiStatusBadge(d.status)}
-      </div>
-    `).join("");
+      `;
+    }).join("");
 
-    const moreCount = n.devices.length > 4 ? `<div style="font-size:10px;color:var(--ink-ghost);padding-top:4px">+${n.devices.length-4} more devices</div>` : "";
+    const moreDevices = n.devices.length > 6 ? `<div style="font-size:10px;color:var(--ink-ghost);padding:4px 8px">+${n.devices.length-6} more</div>` : "";
 
     return `
-      <div onclick="drillDownNetwork('${n.networkId}', '${escape(n.networkName)}')"
-        style="background:var(--panel);border:2px solid ${isSelected?"var(--accent)":borderColor};border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:all .15s;
-               ${isSelected?"box-shadow:0 0 0 1px var(--accent-dim)":""}"
+      <div onclick="drillDownNetwork('${n.networkId}','${escape(n.networkName)}')"
+        style="background:var(--panel);border:2px solid ${isSelected?"var(--accent)":borderColor};border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:.15s"
         onmouseover="this.style.borderColor='${isSelected?"var(--accent)":hasIssues?borderColor:"var(--border-hot)"}'"
         onmouseout="this.style.borderColor='${isSelected?"var(--accent)":borderColor}'">
-        <!-- Header -->
-        <div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:start">
+        <div style="padding:11px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:start">
           <div>
             <div style="font-size:13px;font-weight:700;color:var(--ink)">${n.networkName}</div>
             <div style="font-size:10px;color:var(--ink-dim);margin-top:2px">
-              ${n.summary.appliances?`🔥${n.summary.appliances} `:""}${n.summary.switches?`🔀${n.summary.switches} `:""}${n.summary.wireless?`📡${n.summary.wireless}`:""}
-              · ${n.summary.total} devices
+              ${[n.summary.appliances?`🔥${n.summary.appliances}`:"", n.summary.switches?`🔀${n.summary.switches}`:"", n.summary.wireless?`📡${n.summary.wireless}`:""].filter(Boolean).join(" ")} · ${n.summary.total} devices
             </div>
           </div>
-          <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:end">
+          <div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:end;max-width:140px">
             ${n.summary.offline>0?`<span style="background:var(--danger-dim);color:var(--danger);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">${n.summary.offline} OFFLINE</span>`:""}
             ${n.summary.alerting>0?`<span style="background:var(--warn-dim);color:var(--warn);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">${n.summary.alerting} ALERTING</span>`:""}
-            ${n.summary.alerts>0?`<span style="background:rgba(251,191,36,0.1);color:var(--warn);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">⚠ ${n.summary.alerts}</span>`:""}
+            ${n.summary.alerts>0?`<span style="background:var(--warn-dim);color:var(--warn);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">⚠${n.summary.alerts}</span>`:""}
             ${!hasIssues?`<span style="background:var(--ok-dim);color:var(--ok);padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700">✓ HEALTHY</span>`:""}
           </div>
         </div>
-        <!-- Device list -->
-        <div style="padding:8px 12px">
-          ${deviceRows}
-          ${moreCount}
-        </div>
+        <div style="padding:4px">${deviceRows}${moreDevices}</div>
       </div>
     `;
   }).join("");
 }
 
+function filterNetwork() {
+  if (!_merakiData) return;
+  renderNetworkGrid(_merakiData.networks || []);
+}
+
 async function drillDownNetwork(networkId, networkName) {
   _selectedNetworkId = networkId;
-  // Re-render grid to show selected state
   if (_merakiData) renderNetworkGrid(_merakiData.networks || []);
 
-  const panel = document.getElementById("networkDrillContent");
-  document.querySelector("#networkDrillDown > div:first-child").innerHTML =
-    `<div style="font-size:13px;font-weight:700;color:var(--ink)">${unescape(networkName)}</div>`;
+  const hd = document.querySelector("#networkDrillDown > div:first-child");
+  if (hd) hd.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:13px;font-weight:700;color:var(--ink)">${unescape(networkName)}</div>
+    <button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="loadSiteNarrative('${networkId}')">🤖 AI Analysis</button>
+  </div>`;
 
+  const panel = document.getElementById("networkDrillContent");
   panel.innerHTML = `<div style="text-align:center;padding:30px"><div class="loader" style="margin:0 auto 10px"></div><div style="color:var(--ink-dim);font-size:12px">Loading site details…</div></div>`;
 
   try {
-    const res = await fetch(`/api/merakiContext?type=network&networkId=${networkId}`);
+    const res = await fetch(`/api/merakiContext?type=network&networkId=${networkId}&ai=false`);
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
     renderDrillDown(data);
   } catch(err) {
-    panel.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:16px">Failed to load site details: ${err.message}</div>`;
+    panel.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:16px">Failed: ${err.message}</div>`;
+  }
+}
+
+async function loadSiteNarrative(networkId) {
+  const panel = document.getElementById("networkDrillContent");
+  const narrativeEl = document.getElementById(`siteNarrative_${networkId}`);
+  if (narrativeEl) { narrativeEl.remove(); }
+
+  try {
+    const res = await fetch(`/api/merakiContext?type=site-ai&networkId=${networkId}`);
+    const data = await res.json();
+    if (data.narrative) {
+      const existing = document.getElementById("networkDrillContent");
+      const div = document.createElement("div");
+      div.id = `siteNarrative_${networkId}`;
+      div.style.cssText = "background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;margin:12px 16px 0;display:flex;gap:10px;align-items:start";
+      div.innerHTML = `<span style="font-size:16px;flex-shrink:0">🤖</span><div style="font-size:12px;color:var(--ink);line-height:1.6">${data.narrative}</div>`;
+      existing.prepend(div);
+    }
+  } catch(e) {
+    toast("AI analysis unavailable", "error");
   }
 }
 
 function renderDrillDown(data) {
   const panel = document.getElementById("networkDrillContent");
 
-  // Group devices by type
   const appliances = data.devices.filter(d => d.productType === "appliance");
   const switches = data.devices.filter(d => d.productType === "switch");
   const aps = data.devices.filter(d => d.productType === "wireless");
@@ -4102,30 +4169,42 @@ function renderDrillDown(data) {
   function deviceSection(label, icon, devices) {
     if (!devices.length) return "";
     return `
-      <div style="margin-bottom:12px">
+      <div style="margin-bottom:14px">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">${icon} ${label}</div>
         ${devices.map(d => {
           const uplinks = d.uplinks || [];
-          const hasUplinkIssue = uplinks.some(u => u.status !== "active");
+          const perf = d.uplinkPerf || {};
+          const hasDegraded = Object.values(perf).some(p => p.degraded);
+
           return `
             <div onclick="showNetworkDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')}, '${escape(data.networkName||"")}')"
-              style="background:var(--panel-2);border:1px solid ${d.status==="offline"?"var(--danger)":d.status==="alerting"?"var(--warn)":"var(--border)"};
-                     border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:.12s"
-              onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='var(--panel-2)'">
-              <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px">
-                <div style="font-size:12px;font-weight:700;color:var(--ink)">${d.name||d.serial}</div>
+              style="background:var(--panel-2);border:1px solid ${d.status==="offline"?"var(--danger)":d.status==="alerting"?"var(--warn)":hasDegraded?"var(--warn-dim)":"var(--border)"};
+                     border-radius:var(--radius-sm);padding:9px 11px;margin-bottom:5px;cursor:pointer;transition:.12s"
+              onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='var(--panel-2)'"
+              onclick="showMerakiDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')}, '${data.networkId||""}', '${escape(data.networkName||"")}')">
+              <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:5px">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--ink)">${d.name||d.serial}</div>
+                  <div style="font-size:10px;color:var(--ink-ghost)">${d.model||""} · ${d.firmware||""}</div>
+                </div>
                 ${merakiStatusBadge(d.status)}
               </div>
-              <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:4px">${d.model||""} · ${d.lanIp||""}</div>
-              ${d.clientCount !== null ? `<div style="font-size:10px;color:var(--info)">👥 ${d.clientCount} clients connected</div>` : ""}
-              ${uplinks.map(u => `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;font-size:10px">
-                  <span style="color:var(--ink-dim);font-weight:600">${(u.interface||"").toUpperCase()}</span>
-                  <span style="color:var(--ink-dim)">${u.ip||"—"} → ${u.publicIp||"—"}</span>
-                  ${merakiStatusBadge(u.status)}
-                  ${uplinkPerfBadge(d.uplinkPerf?.[u.interface])}
-                </div>
-              `).join("")}
+              ${d.clientCount !== null && d.productType === "wireless" ? `
+                <div style="font-size:11px;color:var(--info);margin-bottom:4px">👥 ${d.clientCount} clients connected</div>` : ""}
+              ${d.lanIp ? `<div style="font-size:10px;color:var(--ink-ghost);margin-bottom:4px;font-family:var(--mono)">${d.lanIp}</div>` : ""}
+              ${uplinks.map(u => {
+                const p = perf[u.interface] || {};
+                const perfColor = p.degraded ? "var(--warn)" : "var(--ok)";
+                return `
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;padding:4px 6px;background:var(--panel);border-radius:4px;font-size:10px">
+                    <span style="color:var(--ink-dim);font-weight:700;min-width:40px">${(u.interface||"").toUpperCase()}</span>
+                    <span style="color:var(--ink-dim);font-family:var(--mono)">${u.ip||"—"}</span>
+                    <span style="color:var(--ink-ghost)">${u.provider||""}</span>
+                    ${merakiStatusBadge(u.status)}
+                    ${p.avgLatency ? `<span style="color:${perfColor};font-weight:600">${p.avgLatency}ms ${p.avgLoss?p.avgLoss+"%loss":""}</span>` : ""}
+                  </div>
+                `;
+              }).join("")}
             </div>
           `;
         }).join("")}
@@ -4133,210 +4212,117 @@ function renderDrillDown(data) {
     `;
   }
 
-  // VPN status
+  // VPN peers
   const vpnHtml = data.vpn?.length ? `
-    <div style="margin-bottom:12px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">🔐 VPN Tunnels</div>
-      ${data.vpn.map(v => `
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px;margin-bottom:4px;font-size:11px">
-          <div style="font-size:11px;font-weight:600;color:var(--ink)">${v.networkName||v.networkId}</div>
-          <div style="color:var(--ink-dim);margin-top:2px">${(v.vpnPeers||[]).length} peers</div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">🔐 VPN Peers</div>
+      ${data.vpn.flatMap(v => (v.peers||[]).map(p => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:3px;font-size:11px">
+          <span style="color:var(--ink);font-weight:500">${p.networkName||p.networkId}</span>
+          <span style="padding:2px 7px;border-radius:20px;font-size:9px;font-weight:700;background:${p.reachability==="reachable"?"var(--ok-dim)":"var(--danger-dim)"};color:${p.reachability==="reachable"?"var(--ok)":"var(--danger)"}">${(p.reachability||"unknown").toUpperCase()}</span>
+        </div>
+      `)).join("")}
+    </div>
+  ` : "";
+
+  // DHCP subnets
+  const dhcpHtml = data.dhcp?.length ? `
+    <div style="margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">🌐 DHCP Subnets</div>
+      ${data.dhcp.map(s => `
+        <div style="padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:3px;font-size:11px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="color:var(--ink);font-family:var(--mono);font-weight:600">${s.subnet}</span>
+            ${s.utilization !== null ? `
+              <span style="color:${s.utilization>80?"var(--danger)":s.utilization>60?"var(--warn)":"var(--ok)"};font-weight:700">${s.utilization}% used</span>
+            ` : ""}
+          </div>
+          ${s.freeCount !== undefined ? `<div style="font-size:10px;color:var(--ink-ghost);margin-top:2px">${s.usedCount} used · ${s.freeCount} free</div>` : ""}
         </div>
       `).join("")}
     </div>
   ` : "";
 
-  // Recent clients
-  const clientsHtml = data.clients?.length ? `
-    <div style="margin-bottom:12px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">👥 Recent Clients (${data.clientTotal||data.clients.length})</div>
-      <div style="max-height:140px;overflow-y:auto">
-        ${data.clients.map(c => `
-          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px">
-            <div>
-              <span style="color:var(--ink);font-weight:500">${c.description||c.mac||"Unknown"}</span>
-              <span style="color:var(--ink-ghost);margin-left:6px">${c.ip||""}</span>
-            </div>
-            <span style="color:var(--ink-dim)">${c.recentDeviceName||""}</span>
+  // Recent events
+  const eventsHtml = data.events?.length ? `
+    <div style="margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">📋 Recent Events</div>
+      <div style="max-height:160px;overflow-y:auto">
+        ${data.events.map(e => `
+          <div style="padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px">
+            <div style="color:var(--ink);font-weight:500">${e.type||e.category||"Event"}</div>
+            <div style="color:var(--ink-dim);margin-top:1px">${e.description||e.details||""}</div>
+            <div style="color:var(--ink-ghost);font-size:10px;margin-top:1px">${e.occurredAt||e.ts ? new Date(e.occurredAt||e.ts).toLocaleString() : ""}</div>
           </div>
         `).join("")}
       </div>
     </div>
   ` : "";
 
-  panel.innerHTML = `
-    <div style="padding:14px 16px;overflow-y:auto;max-height:70vh">
-      ${deviceSection("Firewalls / MX", "🔥", appliances)}
-      ${deviceSection("Switches", "🔀", switches)}
-      ${deviceSection("Access Points", "📡", aps)}
-      ${deviceSection("Other", "📟", other)}
-      ${vpnHtml}
-      ${clientsHtml}
-      ${!data.devices.length ? `<div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:12px">No devices found for this site</div>` : ""}
+  // Client OS breakdown
+  const osHtml = data.osCounts && Object.keys(data.osCounts).length ? `
+    <div style="margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">👥 Clients — ${data.clientTotal||0} total</div>
+      ${Object.entries(data.osCounts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([os,count]) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px">
+          <span style="color:var(--ink-dim)">${os}</span>
+          <span style="color:var(--ink);font-weight:600">${count}</span>
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+
+  // Granite slot — placeholder for when API is available
+  const graniteHtml = `
+    <div style="margin-bottom:14px;background:var(--panel-2);border:1px dashed var(--border);border-radius:var(--radius-sm);padding:10px 12px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:4px">🏢 Granite Circuits</div>
+      <div style="font-size:11px;color:var(--ink-ghost);font-style:italic">Primary + backup circuit status — pending Granite API access</div>
     </div>
   `;
-}
 
-function filterNetwork() {
-  if (!_merakiData) return;
-  renderNetworkGrid(_merakiData.networks || []);
-}
-
-// Meraki context in Network tickets
-async function loadMerakiTicketContext(ticketId, ticket) {
-  const host = document.getElementById(`merakiCtx_${ticketId}`);
-  if (!host) return;
-  try {
-    const hint = ticket.requester_name || ticket.sub_category || "";
-    const res = await fetch(`/api/merakiContext?type=ticket-context&hint=${encodeURIComponent(hint)}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    const withIssues = (data.networks || []).filter(n => n.hasIssues);
-    if (!withIssues.length) {
-      host.innerHTML = `<div style="color:var(--ok);font-size:12px">✓ No network issues detected across all sites</div>`;
-      return;
-    }
-    host.innerHTML = withIssues.map(n => `
-      <div style="background:var(--danger-dim);border:1px solid var(--danger);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:6px;font-size:12px">
-        <div style="font-weight:700;color:var(--danger);margin-bottom:4px">⚠ ${n.networkName}</div>
-        ${n.offline.map(d=>`<div style="color:var(--ink-dim)">📟 ${d.name} (${DEVICE_TYPE_LABEL[d.type]||d.type}) — OFFLINE · last seen ${d.lastSeen?new Date(d.lastSeen).toLocaleString():"unknown"}</div>`).join("")}
-        ${n.alerting.map(d=>`<div style="color:var(--warn)">⚠ ${d.name} (${DEVICE_TYPE_LABEL[d.type]||d.type}) — ALERTING</div>`).join("")}
-        ${n.failedUplinks.map(u=>`<div style="color:var(--danger)">🔌 ${u.device} ${u.interface.toUpperCase()} — ${u.status.toUpperCase()}</div>`).join("")}
-      </div>
-    `).join("");
-  } catch(e) {
-    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">Network context unavailable</div>`;
-  }
-}
-
-function merakiStatusBadge(status) {
-  const map = {
-    online: { color: "var(--ok)", bg: "var(--ok-dim)", label: "ONLINE" },
-    offline: { color: "var(--danger)", bg: "var(--danger-dim)", label: "OFFLINE" },
-    alerting: { color: "var(--warn)", bg: "var(--warn-dim)", label: "ALERTING" },
-    dormant: { color: "var(--ink-ghost)", bg: "var(--panel-2)", label: "DORMANT" },
-  };
-  const s = map[status] || { color: "var(--ink-dim)", bg: "var(--panel-2)", label: (status||"UNKNOWN").toUpperCase() };
-  return `<span style="background:${s.bg};color:${s.color};padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700">${s.label}</span>`;
-}
-
-async function loadNetwork() {
-  const grid = document.getElementById("networkGrid");
-  const strip = document.getElementById("networkSummaryStrip");
-  if (!grid) return;
-  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading Meraki data…</div>`;
-
-  try {
-    const res = await fetch("/api/merakiContext?type=overview");
-    if (!res.ok) throw new Error(`${res.status}`);
-    _merakiData = await res.json();
-    renderNetwork(_merakiData);
-  } catch(err) {
-    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load Meraki data: ${err.message}<br><span style="color:var(--ink-dim);font-size:11px;margin-top:6px;display:block">Make sure MERAKI_API_KEY is set in environment variables</span></div>`;
-  }
-}
-
-function renderNetwork(data) {
-  const strip = document.getElementById("networkSummaryStrip");
-  const s = data.summary || {};
-  if (strip) {
-    strip.innerHTML = [
-      { label: "Total Devices", val: s.total||0, color: "var(--ink)", cls: "" },
-      { label: "Online", val: s.online||0, color: "var(--ok)", cls: "" },
-      { label: "Offline", val: s.offline||0, color: s.offline>0?"var(--danger)":"var(--ink)", cls: s.offline>0?"alert":"" },
-      { label: "Alerting", val: s.alerting||0, color: s.alerting>0?"var(--warn)":"var(--ink)", cls: "" },
-      { label: "Sites", val: s.networks||0, color: "var(--accent)", cls: "" },
-    ].map(item => `
-      <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
-        <div style="font-size:26px;font-weight:800;color:${item.color};letter-spacing:-1px;line-height:1">${item.val}</div>
-      </div>
-    `).join("");
-  }
-  renderNetworkGrid(data.networks || []);
-}
-
-function renderNetworkGrid(networks) {
-  const grid = document.getElementById("networkGrid");
-  const query = document.getElementById("networkSearch")?.value?.toLowerCase() || "";
-
-  let filtered = networks;
-  if (query) {
-    filtered = networks.filter(n =>
-      (n.networkName||"").toLowerCase().includes(query) ||
-      n.devices.some(d => (d.name||"").toLowerCase().includes(query) || (d.model||"").toLowerCase().includes(query))
-    );
-  }
-
-  if (!filtered.length) {
-    grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">No sites match your search</div>`;
-    return;
-  }
-
-  grid.innerHTML = filtered.map(n => {
-    const hasIssues = n.summary.offline > 0 || n.summary.alerting > 0;
-    const borderColor = n.summary.offline > 0 ? "var(--danger)" : n.summary.alerting > 0 ? "var(--warn)" : "var(--border)";
-
-    const deviceRows = n.devices.map(d => `
-      <div onclick="showNetworkDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')}, '${escape(n.networkName)}')"
-        style="display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:7px 10px;border-radius:var(--radius-sm);cursor:pointer;transition:.12s"
-        onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
-        <span style="font-size:14px">${DEVICE_TYPE_ICON[d.productType]||"📟"}</span>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.name||d.serial}</div>
-          <div style="font-size:10px;color:var(--ink-dim)">${d.model||""} ${d.productType ? "· "+DEVICE_TYPE_LABEL[d.productType] : ""}</div>
-        </div>
-        ${d.uplinks?.length ? `<div style="font-size:10px;color:var(--ink-dim)">${d.uplinks.filter(u=>u.status==="active").length}/${d.uplinks.length} WAN</div>` : "<div></div>"}
-        ${merakiStatusBadge(d.status)}
-      </div>
-    `).join("");
-
-    return `
-      <div style="background:var(--panel);border:1px solid ${borderColor};border-radius:var(--radius);overflow:hidden;transition:.15s"
-           onmouseover="this.style.borderColor='${hasIssues?borderColor:"var(--border-hot)"}'" onmouseout="this.style.borderColor='${borderColor}'">
-        <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:start">
-          <div>
-            <div style="font-size:13px;font-weight:700;color:var(--ink)">${n.networkName}</div>
-            <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">
-              ${n.summary.appliances ? `🔥 ${n.summary.appliances}` : ""}
-              ${n.summary.switches ? ` 🔀 ${n.summary.switches}` : ""}
-              ${n.summary.wireless ? ` 📡 ${n.summary.wireless}` : ""}
-              · ${n.summary.total} devices
-            </div>
-          </div>
-          <div style="display:flex;gap:4px;flex-shrink:0">
-            ${n.summary.offline > 0 ? `<span style="background:var(--danger-dim);color:var(--danger);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">${n.summary.offline} OFFLINE</span>` : ""}
-            ${n.summary.alerting > 0 ? `<span style="background:var(--warn-dim);color:var(--warn);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">${n.summary.alerting} ALERTING</span>` : ""}
-            ${!hasIssues ? `<span style="background:var(--ok-dim);color:var(--ok);padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700">ALL ONLINE</span>` : ""}
-          </div>
-        </div>
-        <div style="padding:4px">${deviceRows}</div>
-      </div>
-    `;
-  }).join("");
-}
-
-function filterNetwork() {
-  if (!_merakiData) return;
-  renderNetworkGrid(_merakiData.networks || []);
+  panel.innerHTML = `<div style="padding:14px 16px;overflow-y:auto;max-height:75vh">
+    ${deviceSection("Firewalls / MX", "🔥", appliances)}
+    ${deviceSection("Switches", "🔀", switches)}
+    ${deviceSection("Access Points", "📡", aps)}
+    ${deviceSection("Other", "📟", other)}
+    ${graniteHtml}
+    ${vpnHtml}
+    ${dhcpHtml}
+    ${osHtml}
+    ${eventsHtml}
+    ${!data.devices.length ? `<div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:12px">No devices</div>` : ""}
+  </div>`;
 }
 
 function showNetworkDeviceDetail(device, networkName) {
   document.getElementById("netDevTitle").textContent = device.name || device.serial;
   const lastSeen = device.lastReportedAt ? new Date(device.lastReportedAt).toLocaleString() : "Unknown";
+  const perf = device.uplinkPerf || {};
+
   const uplinksHtml = device.uplinks?.length ? `
-    <div style="margin-top:10px">
+    <div style="margin-bottom:12px">
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">WAN Uplinks</div>
-      ${device.uplinks.map(u => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:4px;font-size:12px">
-          <span style="color:var(--ink-dim);font-weight:600">${(u.interface||"").toUpperCase()}</span>
-          <span style="color:var(--ink)">${u.ip||"—"}</span>
-          <span style="color:var(--ink-dim)">→ ${u.publicIp||"—"}</span>
-          ${merakiStatusBadge(u.status)}
-        </div>
-      `).join("")}
+      ${device.uplinks.map(u => {
+        const p = perf[u.interface] || {};
+        return `
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span style="color:var(--ink);font-weight:700;font-size:12px">${(u.interface||"").toUpperCase()}</span>
+              ${merakiStatusBadge(u.status)}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px">
+              <div><span style="color:var(--ink-ghost)">IP: </span><span style="color:var(--ink);font-family:var(--mono)">${u.ip||"—"}</span></div>
+              <div><span style="color:var(--ink-ghost)">Public: </span><span style="color:var(--ink);font-family:var(--mono)">${u.publicIp||"—"}</span></div>
+              ${u.provider ? `<div><span style="color:var(--ink-ghost)">ISP: </span><span style="color:var(--info)">${u.provider}</span></div>` : ""}
+              ${p.avgLatency ? `<div><span style="color:var(--ink-ghost)">Latency: </span><span style="color:${p.degraded?"var(--warn)":"var(--ok)"}">${p.avgLatency}ms avg / ${p.maxLatency}ms max</span></div>` : ""}
+              ${p.avgLoss !== undefined ? `<div><span style="color:var(--ink-ghost)">Loss: </span><span style="color:${p.avgLoss>1?"var(--danger)":"var(--ok)"}">${p.avgLoss}%</span></div>` : ""}
+            </div>
+          </div>
+        `;
+      }).join("")}
     </div>
   ` : "";
+
   document.getElementById("netDevBody").innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
@@ -4352,8 +4338,8 @@ function showNetworkDeviceDetail(device, networkName) {
         <div style="font-size:12px;font-weight:600;color:var(--ink)">${device.model||"—"}</div>
       </div>
       <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
-        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Site</div>
-        <div style="font-size:12px;font-weight:600;color:var(--ink)">${networkName}</div>
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Firmware</div>
+        <div style="font-size:11px;color:var(--ink)">${device.firmware||"—"}</div>
       </div>
       <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
         <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Serial</div>
@@ -4363,10 +4349,15 @@ function showNetworkDeviceDetail(device, networkName) {
         <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">LAN IP</div>
         <div style="font-size:12px;font-family:var(--mono);color:var(--ink)">${device.lanIp||"—"}</div>
       </div>
-    </div>
-    <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px">
-      <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Last Reported</div>
-      <div style="font-size:12px;color:var(--ink)">${lastSeen}</div>
+      ${device.clientCount !== null ? `
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Connected Clients</div>
+        <div style="font-size:18px;font-weight:800;color:var(--info)">${device.clientCount}</div>
+      </div>` : ""}
+      <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px">
+        <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Last Reported</div>
+        <div style="font-size:11px;color:var(--ink)">${lastSeen}</div>
+      </div>
     </div>
     ${uplinksHtml}
   `;
@@ -5744,7 +5735,6 @@ async function loadIntuneAndSCContext(ticketId, ticket) {
   const email = ticket.requester_email || ticket.email || ticket.custom_fields?.employee_email || "";
   if (!email) return;
 
-  // Load Intune
   const intuneHost = document.getElementById(`intuneCtx_${ticketId}`);
   const scHost = document.getElementById(`scCtx_${ticketId}`);
 
@@ -5760,39 +5750,366 @@ async function loadIntuneAndSCContext(ticketId, ticket) {
       if (intuneHost) intuneHost.innerHTML = devices.slice(0, 2).map(d => {
         const days = d.lastSyncDateTime ? Math.floor((Date.now() - new Date(d.lastSyncDateTime)) / 86400000) : null;
         const daysLabel = days === null ? "never" : days === 0 ? "today" : `${days}d ago`;
-        const compColor = d.complianceState === "compliant" ? "var(--ok)" : d.complianceState === "noncompliant" ? "var(--danger)" : "var(--warn)";
+        const syncColor = days === null ? "var(--ink-dim)" : days >= 7 ? "var(--danger)" : days >= 3 ? "var(--warn)" : "var(--ok)";
+        const compState = d.complianceState || "unknown";
+        const compColor = compState === "compliant" ? "var(--ok)" : compState === "noncompliant" ? "var(--danger)" : compState === "inGracePeriod" ? "var(--warn)" : "var(--ink-dim)";
+        const compBg = compState === "compliant" ? "var(--ok-dim)" : compState === "noncompliant" ? "var(--danger-dim)" : "var(--warn-dim)";
+        const mgmtLabel = d.managementAgent === "mdm" ? "MDM" : d.managementAgent === "configurationManagerClientMdm" ? "Co-managed" : d.managementAgent || "Unknown";
+
         return `
-          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:6px">
-            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">
+          <div style="background:var(--panel-2);border:1px solid ${compState==="noncompliant"?"var(--danger)":compState==="inGracePeriod"?"var(--warn)":"var(--border)"};border-left:3px solid ${compColor};border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
               <div>
-                <div style="font-size:13px;font-weight:600;color:var(--ink)">${d.deviceName||"Unknown"}</div>
-                <div style="font-size:11px;color:var(--ink-dim)">${d.manufacturer||""} ${d.model||""} · ${d.operatingSystem||""} ${d.osVersion||""}</div>
+                <div style="font-size:13px;font-weight:700;color:var(--ink)">${d.deviceName||"Unknown"}</div>
+                <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${[d.manufacturer,d.model].filter(Boolean).join(" ")} · ${d.operatingSystem||"Windows"} ${(d.osVersion||"").split(".").slice(0,2).join(".")}</div>
               </div>
-              <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:${d.complianceState==="compliant"?"var(--ok-dim)":d.complianceState==="noncompliant"?"var(--danger-dim)":"var(--warn-dim)"};color:${compColor}">${d.complianceState||"unknown"}</span>
+              <span style="padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;background:${compBg};color:${compColor}">${compState.toUpperCase()}</span>
             </div>
-            <div style="display:flex;gap:5px;flex-wrap:wrap">
-              <span style="padding:2px 8px;border-radius:20px;font-size:10px;background:${d.isEncrypted?"var(--ok-dim)":"var(--danger-dim)"};color:${d.isEncrypted?"var(--ok)":"var(--danger)"}">${d.isEncrypted?"🔒 Encrypted":"🔓 Not encrypted"}</span>
-              <span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--panel);color:var(--ink-dim)">⟳ ${daysLabel}</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px">
+              <div style="background:var(--panel);border-radius:var(--radius-sm);padding:5px 7px;text-align:center">
+                <div style="font-size:9px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">BitLocker</div>
+                <div style="font-size:11px;font-weight:700;color:${d.isEncrypted?"var(--ok)":"var(--danger)"}">${d.isEncrypted?"🔒 ON":"🔓 OFF"}</div>
+              </div>
+              <div style="background:var(--panel);border-radius:var(--radius-sm);padding:5px 7px;text-align:center">
+                <div style="font-size:9px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Last Sync</div>
+                <div style="font-size:11px;font-weight:700;color:${syncColor}">${daysLabel}</div>
+              </div>
+              <div style="background:var(--panel);border-radius:var(--radius-sm);padding:5px 7px;text-align:center">
+                <div style="font-size:9px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Mgmt</div>
+                <div style="font-size:11px;font-weight:700;color:var(--ink)">${mgmtLabel}</div>
+              </div>
+            </div>
+            ${compState === "noncompliant" ? `
+            <div style="background:var(--danger-dim);border-radius:var(--radius-sm);padding:5px 8px;margin-bottom:8px;font-size:11px;color:var(--danger)">
+              ⚠ Non-compliant — <button onclick="loadIntuneComplianceDetails('${d.id}','${ticketId}')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:11px;text-decoration:underline;padding:0">view policy details</button>
+            </div>` : ""}
+            <div id="intunePolicy_${d.id}" style="margin-bottom:8px"></div>
+            <div style="display:flex;gap:5px" onclick="event.stopPropagation()">
+              <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px" onclick="runIntuneAction('sync','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">⟳ Sync</button>
+              <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--warn);border-color:var(--warn)" onclick="if(confirm('Retire ${(d.deviceName||"device").replace(/'/g,"\\'")}? This removes company data.'))runIntuneAction('retire','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">Retire</button>
+              <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--danger);border-color:var(--danger)" onclick="if(confirm('⚠️ WIPE ${(d.deviceName||"device").replace(/'/g,"\\'")}? ALL data will be erased!'))runIntuneAction('wipe','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">Wipe</button>
             </div>
           </div>
         `;
       }).join("");
 
-      // Use the first Windows device name/serial to search ScreenConnect
-      // (only if Kandji didn't already find a Mac and trigger SC)
+      // ScreenConnect: use serial or device name (only if Kandji didn't already handle it)
       const kandjiHost = document.getElementById(`kandjiCtx_${ticketId}`);
-      const kandjiFoundMac = kandjiHost && !kandjiHost.innerHTML.includes("No Mac found") && !kandjiHost.innerHTML.includes("No email");
-      if (!kandjiFoundMac && scHost && devices[0]?.deviceName) {
-        const windowsDevice = devices[0];
-        const searchTerm = windowsDevice.serialNumber || windowsDevice.deviceName;
-        loadScreenConnectBySerial(ticketId, searchTerm, windowsDevice.deviceName);
+      const kandjiFoundMac = kandjiHost && !kandjiHost.innerHTML.includes("No Mac found") && !kandjiHost.innerHTML.includes("No email") && !kandjiHost.innerHTML.includes("loader");
+      if (!kandjiFoundMac && scHost && devices[0]) {
+        const d = devices[0];
+        loadScreenConnectBySerial(ticketId, d.serialNumber || d.deviceName, d.deviceName);
       }
     }
   } catch(e) {
     if (intuneHost) intuneHost.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">Intune unavailable: ${e.message}</div>`;
   }
 }
-// session clock
+
+async function loadIntuneComplianceDetails(deviceId, ticketId) {
+  const host = document.getElementById(`intunePolicy_${deviceId}`);
+  if (!host) return;
+  host.innerHTML = `<div style="font-size:11px;color:var(--ink-dim)"><span class="loader" style="display:inline-block;margin-right:4px"></span>Loading policy details…</div>`;
+  try {
+    const res = await fetch(`/api/intune?action=device&id=${deviceId}`);
+    const data = await res.json();
+    const failing = data.failingPolicies || [];
+    if (!failing.length) {
+      host.innerHTML = `<div style="font-size:11px;color:var(--ok)">✓ All compliance policies passing</div>`;
+      return;
+    }
+    host.innerHTML = `
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--danger);margin-bottom:4px">Failing Policies</div>
+      ${failing.map(p => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:var(--danger-dim);border-radius:var(--radius-sm);margin-bottom:3px;font-size:11px">
+          <span style="color:var(--ink)">${p.displayName||p.id}</span>
+          <span style="color:var(--danger);font-weight:700">${(p.state||"").toUpperCase()}</span>
+        </div>
+      `).join("")}
+    `;
+  } catch(e) {
+    host.innerHTML = `<div style="font-size:11px;color:var(--ink-ghost)">Could not load policy details</div>`;
+  }
+}
+
+async function runIntuneAction(action, deviceId, deviceName) {
+  const labels = { sync: "Sync", retire: "Retire", wipe: "Wipe" };
+  toast(`Sending Intune command: ${labels[action]}…`, "info");
+  try {
+    const res = await fetch("/api/intune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, deviceId })
+    });
+    const data = await res.json();
+    if (data.ok) toast(`✓ ${data.message || labels[action] + " command sent to " + deviceName}`);
+    else toast(`✗ Intune command failed: ${data.error||"unknown"}`, "error");
+  } catch(e) {
+    toast(`✗ Intune error: ${e.message}`, "error");
+  }
+}
+// ============================================================
+// MERAKI DEEP DEVICE DETAIL
+// ============================================================
+async function showMerakiDeviceDetail(device, networkId, networkName) {
+  document.getElementById("merakiDevTitle").textContent = device.name || device.serial;
+  document.getElementById("merakiDevSubtitle").textContent = `${device.model||""} · ${networkName||""} · ${device.serial}`;
+  document.getElementById("merakiDevAI").textContent = "";
+  document.getElementById("merakiDevBody").innerHTML = `<div style="text-align:center;padding:40px"><div class="loader" style="margin:0 auto 10px"></div><div style="color:var(--ink-dim);font-size:12px">Loading device detail…</div></div>`;
+  openModal("merakiDeviceModal");
+
+  try {
+    const res = await fetch(`/api/merakiContext?type=device&serial=${device.serial}&productType=${device.productType||"switch"}&networkId=${networkId||""}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+
+    if (data.aiNarrative) {
+      document.getElementById("merakiDevAI").innerHTML = `<span style="color:var(--accent);font-size:12px">🤖 ${data.aiNarrative}</span>`;
+    }
+
+    if (data.type === "switch") renderSwitchDetail(data, device);
+    else if (data.type === "appliance") renderApplianceDetail(data, device);
+    else if (data.type === "wireless") renderWirelessDetail(data, device);
+    else renderGenericDeviceDetail(device, data);
+  } catch(e) {
+    document.getElementById("merakiDevBody").innerHTML = `<div style="padding:20px;color:var(--danger);font-size:12px">Failed to load device detail: ${e.message}</div>`;
+  }
+}
+
+function renderSwitchDetail(data, device) {
+  const body = document.getElementById("merakiDevBody");
+  const s = data.summary || {};
+  const ports = data.ports || [];
+
+  const portRows = ports.map(p => {
+    const isConnected = p.status === "Connected";
+    const hasError = p.errors?.length > 0;
+    const hasWarning = p.warnings?.length > 0;
+    const isUplink = p.isUplink;
+    const speedLabel = p.speed ? p.speed.replace("Gbps","G").replace("Mbps","M") : "—";
+    const trafficLabel = p.trafficInKbps > 1000
+      ? `↓${(p.trafficInKbps/1024).toFixed(1)}M`
+      : p.trafficInKbps > 0 ? `↓${p.trafficInKbps}K` : "";
+    const vlanLabel = p.type === "trunk" ? `trunk ${p.allowedVlans||"all"}` : `vlan ${p.vlan||1}`;
+    const poeLabel = p.poeEnabled && isConnected && p.powerUsageInWh ? `⚡${(p.powerUsageInWh/1000).toFixed(1)}W` : "";
+    const neighborLabel = p.neighbor ? `🔗 ${p.neighbor}${p.neighborPort?` ${p.neighborPort}`:""}` : "";
+
+    const rowBg = !p.enabled ? "opacity:.4" : hasError ? "background:var(--danger-dim)" : hasWarning ? "background:var(--warn-dim)" : isUplink ? "background:var(--accent-dim)" : "";
+    const statusDot = !p.enabled ? `<span style="color:var(--ink-ghost)">○</span>`
+      : isConnected ? `<span style="color:var(--ok)">●</span>`
+      : `<span style="color:var(--border-hot)">○</span>`;
+
+    return `
+      <div style="display:grid;grid-template-columns:28px 36px 1fr 60px 60px 80px 100px;gap:6px;align-items:center;padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;${rowBg}"
+        title="${hasError?p.errors.join(", "):hasWarning?p.warnings.join(", "):p.name}">
+        <span style="text-align:center">${statusDot}</span>
+        <span style="color:var(--ink-dim);font-family:var(--mono);font-weight:600">${p.portId}</span>
+        <div style="min-width:0">
+          <div style="color:${isUplink?"var(--accent)":"var(--ink)"};font-weight:${isUplink?"700":"400"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${p.name||`Port ${p.portId}`}${isUplink?" ↑":""}
+          </div>
+          ${neighborLabel ? `<div style="color:var(--info);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${neighborLabel}</div>` : ""}
+        </div>
+        <span style="color:var(--ink-dim);font-size:10px">${speedLabel}</span>
+        <span style="color:var(--ink-ghost);font-size:10px">${vlanLabel}</span>
+        <span style="color:var(--ok);font-size:10px">${trafficLabel}</span>
+        <span style="color:var(--info);font-size:10px">${poeLabel}</span>
+      </div>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    <!-- Summary strip -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;padding:14px 16px;border-bottom:1px solid var(--border)">
+      ${[
+        { label: "Total Ports", val: s.total||0, color: "var(--ink)" },
+        { label: "Connected", val: s.connected||0, color: "var(--ok)" },
+        { label: "Disconnected", val: s.disconnected||0, color: s.disconnected>0?"var(--ink-dim)":"var(--ink-dim)" },
+        { label: "Errors", val: s.errored||0, color: s.errored>0?"var(--danger)":"var(--ink-dim)" },
+        { label: "PoE Active", val: s.poeActive||0, color: "var(--info)" },
+        { label: "High Traffic", val: s.highTraffic||0, color: s.highTraffic>0?"var(--warn)":"var(--ink-dim)" },
+      ].map(item => `
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;text-align:center">
+          <div style="font-size:9px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">${item.label}</div>
+          <div style="font-size:20px;font-weight:800;color:${item.color}">${item.val}</div>
+        </div>
+      `).join("")}
+    </div>
+
+    <!-- Port table header -->
+    <div style="display:grid;grid-template-columns:28px 36px 1fr 60px 60px 80px 100px;gap:6px;padding:6px 10px;background:var(--panel-2);border-bottom:2px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">
+      <span></span>
+      <span>Port</span>
+      <span>Name / Neighbor</span>
+      <span>Speed</span>
+      <span>VLAN</span>
+      <span>Traffic</span>
+      <span>PoE</span>
+    </div>
+
+    <!-- Ports -->
+    <div style="max-height:400px;overflow-y:auto">
+      ${portRows || `<div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:12px">No port data available</div>`}
+    </div>
+
+    <!-- Recent clients -->
+    ${data.clients?.length ? `
+    <div style="padding:14px 16px;border-top:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:8px">Recent Clients (${data.clients.length})</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;max-height:120px;overflow-y:auto">
+        ${data.clients.slice(0,12).map(c => `
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:5px 8px;font-size:11px">
+            <div style="color:var(--ink);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.description||c.mac||"Unknown"}</div>
+            <div style="color:var(--ink-ghost);font-size:10px">${c.ip||""} · ${c.vlan||""}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>` : ""}
+  `;
+}
+
+function renderApplianceDetail(data, device) {
+  const body = document.getElementById("merakiDevBody");
+  const perf = data.performance;
+  const ports = data.ports || [];
+
+  body.innerHTML = `
+    <!-- Performance -->
+    ${perf ? `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:10px">Performance</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        ${perf.perfScore !== undefined ? `
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;text-align:center">
+            <div style="font-size:9px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Perf Score</div>
+            <div style="font-size:24px;font-weight:800;color:${perf.perfScore>80?"var(--ok)":perf.perfScore>50?"var(--warn)":"var(--danger)"}">${perf.perfScore}</div>
+          </div>` : ""}
+      </div>
+    </div>` : ""}
+
+    <!-- LAN Ports -->
+    ${ports.length ? `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:8px">LAN Ports</div>
+      ${ports.map(p => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:4px;font-size:12px">
+          <span style="color:var(--ink-dim);font-weight:600;min-width:60px">Port ${p.number}</span>
+          <span style="color:var(--ink)">${p.type||"access"}</span>
+          <span style="color:var(--ink-dim)">VLAN ${p.vlan||1}</span>
+          <span style="padding:2px 6px;border-radius:20px;font-size:10px;background:${p.enabled?"var(--ok-dim)":"var(--panel)"};color:${p.enabled?"var(--ok)":"var(--ink-ghost)"}">${p.enabled?"Enabled":"Disabled"}</span>
+        </div>
+      `).join("")}
+    </div>` : ""}
+
+    <!-- Firewall + VPN summary -->
+    <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${data.firewall ? `
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 12px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Firewall</div>
+          <div style="font-size:22px;font-weight:800;color:var(--ink)">${data.firewall.ruleCount}</div>
+          <div style="font-size:11px;color:var(--ink-dim)">L3 rules</div>
+          ${data.firewall.hasDefaultDeny ? `<div style="font-size:10px;color:var(--ok);margin-top:4px">✓ Default deny rule configured</div>` : `<div style="font-size:10px;color:var(--warn);margin-top:4px">⚠ No default deny rule</div>`}
+        </div>` : ""}
+      ${data.vpnConfig ? `
+        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 12px">
+          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">VPN</div>
+          <div style="font-size:13px;font-weight:700;color:var(--accent)">${data.vpnConfig.mode||"—"}</div>
+          <div style="font-size:11px;color:var(--ink-dim);margin-top:3px">${data.vpnConfig.peerCount} peers · ${data.vpnConfig.subnetCount} subnets</div>
+        </div>` : ""}
+    </div>
+  `;
+}
+
+function renderWirelessDetail(data, device) {
+  const body = document.getElementById("merakiDevBody");
+  const radios = data.radios || [];
+  const connStats = data.connectionStats;
+  const chanUtil = data.channelUtilization;
+
+  body.innerHTML = `
+    <!-- Radio summary -->
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:10px">Radio Status</div>
+      <div style="display:grid;grid-template-columns:repeat(${radios.length||2},1fr);gap:8px">
+        ${radios.map(r => `
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 12px">
+            <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px">${r.band} GHz</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;margin-bottom:6px">
+              <div><span style="color:var(--ink-ghost)">Channel: </span><span style="color:var(--ink);font-weight:600">${r.channel||"—"}</span></div>
+              <div><span style="color:var(--ink-ghost)">Power: </span><span style="color:var(--ink);font-weight:600">${r.power||"—"} dBm</span></div>
+              <div><span style="color:var(--ink-ghost)">Clients: </span><span style="color:var(--info);font-weight:600">${r.clients||0}</span></div>
+            </div>
+            <div style="font-size:10px;color:var(--ink-ghost)">SSIDs: ${(r.ssids||[]).slice(0,3).join(", ")}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+
+    <!-- Channel utilization + connection stats -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)">
+      ${chanUtil ? `
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:8px">Channel Utilization</div>
+          ${[
+            { label: "WiFi traffic", val: chanUtil.wifi||0, color: "var(--accent)" },
+            { label: "Non-WiFi interference", val: chanUtil.nonWifi||0, color: "var(--warn)" },
+            { label: "Total", val: chanUtil.total||0, color: chanUtil.total>70?"var(--danger)":chanUtil.total>40?"var(--warn)":"var(--ok)" },
+          ].map(item => `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <div style="font-size:11px;color:var(--ink-dim);min-width:110px">${item.label}</div>
+              <div style="flex:1;height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden">
+                <div style="height:100%;background:${item.color};width:${item.val}%;border-radius:3px;transition:.3s"></div>
+              </div>
+              <span style="font-size:11px;font-weight:700;color:${item.color};min-width:35px">${item.val}%</span>
+            </div>
+          `).join("")}
+        </div>` : ""}
+      ${connStats ? `
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:8px">Connection Stats (1h)</div>
+          ${[
+            { label: "Association attempts", val: connStats.assoc||0 },
+            { label: "Auth successes", val: connStats.auth||0 },
+            { label: "DHCP successes", val: connStats.dhcp||0 },
+            { label: "DNS successes", val: connStats.dns||0 },
+            { label: "Full connection", val: connStats.success||0 },
+          ].map(item => `
+            <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid var(--border)">
+              <span style="color:var(--ink-dim)">${item.label}</span>
+              <span style="color:var(--ink);font-weight:600">${item.val}</span>
+            </div>
+          `).join("")}
+          ${connStats.successRate !== null ? `
+            <div style="margin-top:6px;font-size:13px;font-weight:700;color:${connStats.successRate>90?"var(--ok)":connStats.successRate>70?"var(--warn)":"var(--danger)"}">
+              ${connStats.successRate}% connection success rate
+            </div>` : ""}
+        </div>` : ""}
+    </div>
+
+    <!-- Connected clients -->
+    ${data.clients?.length ? `
+    <div style="padding:14px 16px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:8px">Connected Clients (${data.clientCount||data.clients.length})</div>
+      <div style="max-height:160px;overflow-y:auto">
+        ${data.clients.slice(0,20).map(c => `
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px">
+            <span style="color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.description||c.mac||"Unknown"}</span>
+            <span style="color:var(--ink-dim);font-family:var(--mono)">${c.ip||""}</span>
+            <span style="color:var(--ink-ghost)">${c.ssid||""}</span>
+            <span style="color:var(--info)">${c.rssi ? c.rssi+"dBm" : ""}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>` : ""}
+  `;
+}
+
+function renderGenericDeviceDetail(device, data) {
+  document.getElementById("merakiDevBody").innerHTML = `
+    <div style="padding:20px;color:var(--ink-dim);font-size:12px;text-align:center">
+      No detailed data available for this device type (${device.productType||"unknown"})
+    </div>`;
+}
 function updateClock(){
   const d = new Date();
   $("#sessionTime").textContent = d.toLocaleTimeString("en-US",{hour12:false});
