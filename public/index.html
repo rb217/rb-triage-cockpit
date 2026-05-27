@@ -1646,7 +1646,7 @@ function applyFilters(){
   }
   list.sort((a,b)=>{
     if(b.priority!==a.priority) return (b.priority||0)-(a.priority||0);
-    return new Date(a.created_at) - new Date(b.created_at);
+    return new Date(b.created_at) - new Date(a.created_at); // newest first within same priority
   });
   return list;
 }
@@ -3050,6 +3050,9 @@ async function fetchTickets({silent=false}={}){
     const data = await res.json();
     TICKETS = (data.open || []).map(normalizeTicket);
     window._tickets = TICKETS;
+    // Clear device context caches so fresh data loads on next open
+    _intuneLoaded.clear();
+    _scLoaded.clear();
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
     const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
@@ -5722,6 +5725,8 @@ document.getElementById("refreshFleetBtn")?.addEventListener("click", () => { _f
 // SCREENCONNECT — SESSION BUTTON IN TICKET DETAIL
 // ============================================================
 let _scSessions = new Map(); // machineNameOrEmail -> sessions
+const _intuneLoaded = new Set(); // ticketIds that have loaded Intune
+const _scLoaded = new Set();     // ticketIds that have loaded ScreenConnect
 
 async function loadScreenConnectContext(ticketId, ticket) {
   const host = document.getElementById(`scCtx_${ticketId}`);
@@ -5769,17 +5774,20 @@ async function loadScreenConnectContext(ticketId, ticket) {
 }
 
 async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
+  if (_scLoaded.has(ticketId)) return; // already loaded
+  _scLoaded.add(ticketId);
+
   const host = document.getElementById(`scCtx_${ticketId}`);
   if (!host) return;
   host.innerHTML = `<div style="font-size:12px;color:var(--ink-dim)"><div class="loader" style="display:inline-block;margin-right:6px"></div>Searching by serial: ${serial}…</div>`;
   try {
     const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(serial)}`);
-    if (!res.ok) throw new Error(`${res.status}`);
+    if (!res.ok) throw new Error(`API ${res.status}`);
     const data = await res.json();
     let sessions = data.sessions || [];
 
-    // Also try device name if serial search returns nothing
-    if (!sessions.length && deviceName) {
+    // Also try device name if serial returns nothing
+    if (!sessions.length && deviceName && deviceName !== serial) {
       const res2 = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(deviceName)}`);
       if (res2.ok) {
         const data2 = await res2.json();
@@ -5801,15 +5809,15 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
       ${sessions.slice(0, 3).map(s => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:5px">
           <div>
-            <div style="font-size:12px;font-weight:600;color:var(--ink)">${s.name||s.sessionId}</div>
-            ${s.isActive ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>` : ""}
+            <div style="font-size:12px;font-weight:600;color:var(--ink)">${s.name||s.guestMachineName||s.sessionId}</div>
+            ${s.isActive ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>` : s.lastConnected ? `<div style="font-size:10px;color:var(--ink-ghost)">Last: ${new Date(s.lastConnected).toLocaleString()}</div>` : ""}
           </div>
-          <a href="${s.launchUrl}" target="_blank" class="btn primary" style="font-size:11px;padding:4px 10px;text-decoration:none">🖥️ Connect</a>
+          ${s.launchUrl ? `<a href="${s.launchUrl}" target="_blank" class="btn primary" style="font-size:11px;padding:4px 10px;text-decoration:none">🖥️ Connect</a>` : ""}
         </div>
       `).join("")}
     `;
   } catch(e) {
-    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">ScreenConnect unavailable: ${e.message}</div>`;
+    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">ScreenConnect: ${e.message}</div>`;
   }
 }
 
@@ -5951,6 +5959,9 @@ document.querySelector('[data-mode="fleet"]')?.addEventListener("click", () => {
 // INTUNE + SCREENCONNECT — combined loader
 // ============================================================
 async function loadIntuneAndSCContext(ticketId, ticket) {
+  if (_intuneLoaded.has(ticketId)) return; // already loaded
+  _intuneLoaded.add(ticketId);
+
   const email = ticket.requester_email || ticket.email || ticket.custom_fields?.employee_email || "";
   if (!email) return;
 
