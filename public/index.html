@@ -1808,10 +1808,15 @@ function selectTicket(id){
   }
   // load Kandji device context for all tickets
   if (t) setTimeout(() => loadKandjiTicketContext(id, t), 400);
-  // load Intune device context for all tickets
-  if (t) setTimeout(() => loadIntuneTicketContext(id, t), 500);
-  // load ScreenConnect sessions
-  if (t) setTimeout(() => loadScreenConnectContext(id, t), 600);
+  // load Intune device context — on demand only (button click)
+  // load ScreenConnect sessions — on demand only (button click)
+  if (t) {
+    // Set up on-demand loaders instead of auto-loading
+    const intuneHost = document.getElementById(`intuneCtx_${id}`);
+    if (intuneHost) intuneHost.innerHTML = `<button class="btn ghost" style="font-size:11px" onclick="loadIntuneTicketContext(${id}, window._tickets?.find?.(x=>x.id===${id}) || {id:${id},requester_email:'${(t.requester_email||"").replace(/'/g,"\\'")}',email:'${(t.email||"").replace(/'/g,"\\'")}',custom_fields:{}})">Load Windows devices</button>`;
+    const scHost = document.getElementById(`scCtx_${id}`);
+    if (scHost) scHost.innerHTML = `<button class="btn ghost" style="font-size:11px" onclick="loadScreenConnectContext(${id}, window._tickets?.find?.(x=>x.id===${id}) || {id:${id},requester_name:'${(t.requester_name||"").replace(/'/g,"\\'")}',requester_email:'${(t.requester_email||"").replace(/'/g,"\\'")}',email:'${(t.email||"").replace(/'/g,"\\'")}' })">Search ScreenConnect</button>`;
+  }
 }
 
 function isProvisioningTicket(t){
@@ -3030,6 +3035,7 @@ async function fetchTickets({silent=false}={}){
     if(!res.ok) throw new Error("API "+res.status);
     const data = await res.json();
     TICKETS = (data.open || []).map(normalizeTicket);
+    window._tickets = TICKETS;
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
     const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
