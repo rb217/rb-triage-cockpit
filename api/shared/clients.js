@@ -54,8 +54,21 @@ async function fsRequest(path, options = {}) {
 }
 
 async function fsGetAllOpenTickets() {
-  const data = await fsRequest(`/tickets?per_page=100`);
-  return data.tickets || [];
+  // Fetch only open tickets (status 2=Open, 3=Pending, 6=Hold)
+  // include=requester brings back requester email and name
+  const results = [];
+  const statuses = [2, 3, 6];
+  for (const status of statuses) {
+    try {
+      const data = await fsRequest(`/tickets?status=${status}&per_page=100&include=requester`);
+      results.push(...(data.tickets || []));
+    } catch(e) {
+      // fallback: try without status filter if it fails
+    }
+  }
+  // Deduplicate by id
+  const seen = new Set();
+  return results.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
 }
 
 async function fsGetTicket(id) {
@@ -76,7 +89,7 @@ async function fsReplyToTicket(id, body) {
 }
 
 async function fsGetClosedTickets(limit = 200) {
-  const data = await fsRequest(`/tickets?per_page=${Math.min(limit, 100)}&order_type=desc&order_by=updated_at`);
+  const data = await fsRequest(`/tickets?per_page=${Math.min(limit, 100)}&order_type=desc&order_by=updated_at&include=requester`);
   return (data.tickets || []).filter(t => t.status === 4 || t.status === 5).slice(0, limit);
 }
 
