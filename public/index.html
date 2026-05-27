@@ -1110,7 +1110,7 @@
   </div>
 
   <!-- Device grid — larger cards, 2 per row -->
-  <div id="fleetGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:12px">
+  <div id="fleetGrid" style="display:grid;grid-template-columns:1fr;gap:4px">
     <div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">
       <div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…
     </div>
@@ -1806,17 +1806,10 @@ function selectTicket(id){
   if (t && t.category === "Network") {
     setTimeout(() => loadMerakiTicketContext(id, t), 300);
   }
-  // load Kandji device context for all tickets
+  // load Kandji device context for all tickets (also triggers SC via serial)
   if (t) setTimeout(() => loadKandjiTicketContext(id, t), 400);
-  // load Intune device context — on demand only (button click)
-  // load ScreenConnect sessions — on demand only (button click)
-  if (t) {
-    // Set up on-demand loaders instead of auto-loading
-    const intuneHost = document.getElementById(`intuneCtx_${id}`);
-    if (intuneHost) intuneHost.innerHTML = `<button class="btn ghost" style="font-size:11px" onclick="loadIntuneTicketContext(${id}, window._tickets?.find?.(x=>x.id===${id}) || {id:${id},requester_email:'${(t.requester_email||"").replace(/'/g,"\\'")}',email:'${(t.email||"").replace(/'/g,"\\'")}',custom_fields:{}})">Load Windows devices</button>`;
-    const scHost = document.getElementById(`scCtx_${id}`);
-    if (scHost) scHost.innerHTML = `<button class="btn ghost" style="font-size:11px" onclick="loadScreenConnectContext(${id}, window._tickets?.find?.(x=>x.id===${id}) || {id:${id},requester_name:'${(t.requester_name||"").replace(/'/g,"\\'")}',requester_email:'${(t.requester_email||"").replace(/'/g,"\\'")}',email:'${(t.email||"").replace(/'/g,"\\'")}' })">Search ScreenConnect</button>`;
-  }
+  // load Intune device context + ScreenConnect for Windows users
+  if (t) setTimeout(() => loadIntuneAndSCContext(id, t), 500);
 }
 
 function isProvisioningTicket(t){
@@ -5187,7 +5180,7 @@ loadRunbooks();
 let _fleetData = null;
 let _fleetFilter = "all";
 let _fleetPage = 0;
-const FLEET_PAGE_SIZE = 12;
+const FLEET_PAGE_SIZE = 30;
 let _currentMacDevice = null;
 
 // Add fleet filter button styles
@@ -5280,6 +5273,13 @@ function renderFleetList() {
     );
   }
 
+  // Sort: online + compliant first, then issues, then offline
+  devices.sort((a, b) => {
+    const scoreA = (a.is_missing ? 4 : 0) + (!a._compliance?.compliant ? 2 : 0) + ((a._compliance?.daysSinceCheckIn||0) >= 5 ? 1 : 0);
+    const scoreB = (b.is_missing ? 4 : 0) + (!b._compliance?.compliant ? 2 : 0) + ((b._compliance?.daysSinceCheckIn||0) >= 5 ? 1 : 0);
+    return scoreA - scoreB;
+  });
+
   const total = devices.length;
   const totalPages = Math.ceil(total / FLEET_PAGE_SIZE);
   _fleetPage = Math.min(_fleetPage, Math.max(0, totalPages - 1));
@@ -5294,66 +5294,51 @@ function renderFleetList() {
     return;
   }
 
+  // Switch grid to list layout
+  grid.style.gridTemplateColumns = "1fr";
+  grid.style.gap = "4px";
+
   grid.innerHTML = pageDevices.map(d => {
     const c = d._compliance || {};
-    const mac = isMac(d);
-    const borderColor = d.is_missing ? "var(--danger)" : !c.compliant ? "var(--warn)" : "var(--border)";
     const days = c.daysSinceCheckIn;
     const daysLabel = days === null ? "never" : days === 0 ? "today" : `${days}d ago`;
-    const statusBadge = d.is_missing
-      ? `<span style="background:var(--danger-dim);color:var(--danger);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">OFFLINE</span>`
+    const isOnline = !d.is_missing && (days === null || days < 2);
+    const borderColor = d.is_missing ? "var(--danger)" : !c.compliant ? "var(--warn)" : "var(--border)";
+    const statusDot = d.is_missing
+      ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);flex-shrink:0"></span>`
       : !c.compliant
-      ? `<span style="background:var(--warn-dim);color:var(--warn);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">ISSUES</span>`
-      : `<span style="background:var(--ok-dim);color:var(--ok);padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700">✓ OK</span>`;
+      ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--warn);flex-shrink:0"></span>`
+      : `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);flex-shrink:0"></span>`;
 
     return `
       <div onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})"
-        style="background:var(--panel);border:1px solid ${borderColor};border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:10px"
-        onmouseover="this.style.borderColor='${d.is_missing?"var(--danger)":!c.compliant?"var(--warn)":"var(--border-hot)"}'"
-        onmouseout="this.style.borderColor='${borderColor}'">
+        style="background:var(--panel);border:1px solid ${borderColor};border-left:3px solid ${d.is_missing?"var(--danger)":!c.compliant?"var(--warn)":"var(--ok)"};border-radius:var(--radius-sm);padding:10px 14px;cursor:pointer;transition:.12s;display:grid;grid-template-columns:auto 1fr auto auto auto;gap:12px;align-items:center"
+        onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='var(--panel)'">
 
-        <!-- Top row: name + badge -->
-        <div style="display:flex;justify-content:space-between;align-items:start">
-          <div>
-            <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:2px">${d.device_name||"Unknown Device"}</div>
-            <div style="font-size:12px;color:var(--ink-dim)">${d.model||"Unknown model"}</div>
-          </div>
-          ${statusBadge}
+        ${statusDot}
+
+        <!-- Device name + user -->
+        <div style="min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.device_name||"Unknown Device"}</div>
+          <div style="font-size:11px;color:var(--ink-dim)">${d.user?.name ? `👤 ${d.user.name}` : "No user"} · ${d.model||"?"}</div>
         </div>
 
-        <!-- User -->
-        ${d.user ? `
-        <div style="display:flex;align-items:center;gap:8px;background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
-          <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim,rgba(99,102,241,.2));display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">👤</div>
-          <div>
-            <div style="font-size:13px;font-weight:600;color:var(--ink)">${d.user.name||""}</div>
-            <div style="font-size:11px;color:var(--ink-dim)">${d.user.email||""}</div>
-          </div>
-        </div>` : `<div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px;font-size:12px;color:var(--ink-ghost)">No user assigned</div>`}
-
-        <!-- Stats row -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
-          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
-            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">macOS</div>
-            <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.os_version||"—"}</div>
-          </div>
-          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
-            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">Check-in</div>
-            <div style="font-size:12px;font-weight:600;color:${days>=5?"var(--warn)":"var(--ink)"}">${daysLabel}</div>
-          </div>
-          <div style="background:${d.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};border-radius:var(--radius-sm);padding:6px 8px;text-align:center">
-            <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:2px">FileVault</div>
-            <div style="font-size:12px;font-weight:600;color:${d.filevault_enabled?"var(--ok)":"var(--danger)"}">${d.filevault_enabled?"ON":"OFF"}</div>
-          </div>
+        <!-- OS version -->
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:1px">OS</div>
+          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.os_version||"—"}</div>
         </div>
 
-        <!-- Issues -->
-        ${c.issues?.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${c.issues.map(i=>`<span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--warn-dim);color:var(--warn)">⚠ ${i}</span>`).join("")}</div>` : ""}
+        <!-- Last check-in -->
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--ink-ghost);margin-bottom:1px">Check-in</div>
+          <div style="font-size:12px;font-weight:600;color:${days>=5?"var(--warn)":days>=2?"var(--ink-dim)":"var(--ok)"}">${daysLabel}</div>
+        </div>
 
-        <!-- Actions -->
-        <div style="display:flex;gap:6px;margin-top:2px" onclick="event.stopPropagation()">
-          <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:5px" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳ Check-in</button>
-          <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:5px" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">📋 Details</button>
+        <!-- FileVault + actions -->
+        <div style="display:flex;gap:6px;align-items:center" onclick="event.stopPropagation()">
+          <span style="padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700;background:${d.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};color:${d.filevault_enabled?"var(--ok)":"var(--danger)"}">${d.filevault_enabled?"🔒":"🔓"}</span>
+          <button class="btn" style="font-size:11px;padding:3px 9px" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳</button>
         </div>
       </div>
     `;
@@ -5573,6 +5558,51 @@ async function loadScreenConnectContext(ticketId, ticket) {
   }
 }
 
+async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
+  const host = document.getElementById(`scCtx_${ticketId}`);
+  if (!host) return;
+  host.innerHTML = `<div style="font-size:12px;color:var(--ink-dim)"><div class="loader" style="display:inline-block;margin-right:6px"></div>Searching by serial: ${serial}…</div>`;
+  try {
+    const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(serial)}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    let sessions = data.sessions || [];
+
+    // Also try device name if serial search returns nothing
+    if (!sessions.length && deviceName) {
+      const res2 = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(deviceName)}`);
+      if (res2.ok) {
+        const data2 = await res2.json();
+        sessions = data2.sessions || [];
+      }
+    }
+
+    if (!sessions.length) {
+      host.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No ScreenConnect session found for ${deviceName||serial}</div>`;
+      return;
+    }
+
+    const active = sessions.filter(s => s.isActive);
+    host.innerHTML = `
+      <div style="font-size:12px;color:var(--ink-dim);margin-bottom:8px">
+        ${sessions.length} session(s) · ${active.length > 0 ? `<span style="color:var(--ok)">● ${active.length} active now</span>` : "no active sessions"}
+        <span style="color:var(--ink-ghost);margin-left:6px;font-size:10px">matched by serial</span>
+      </div>
+      ${sessions.slice(0, 3).map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:5px">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--ink)">${s.name||s.sessionId}</div>
+            ${s.isActive ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>` : ""}
+          </div>
+          <a href="${s.launchUrl}" target="_blank" class="btn primary" style="font-size:11px;padding:4px 10px;text-decoration:none">🖥️ Connect</a>
+        </div>
+      `).join("")}
+    `;
+  } catch(e) {
+    host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">ScreenConnect unavailable: ${e.message}</div>`;
+  }
+}
+
 // ============================================================
 // KANDJI DEVICE CONTEXT IN TICKETS
 // ============================================================
@@ -5621,6 +5651,13 @@ async function loadKandjiTicketContext(ticketId, ticket) {
         <button class="btn" style="font-size:11px;padding:4px 10px" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">📋 Full details</button>
       </div>
     `;
+
+    // Now auto-load ScreenConnect using the serial number
+    if (d.serial_number) {
+      const scHost = document.getElementById(`scCtx_${ticketId}`);
+      if (scHost) loadScreenConnectBySerial(ticketId, d.serial_number, d.device_name);
+    }
+
   } catch(e) {
     host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">Kandji unavailable: ${e.message}</div>`;
   }
@@ -5701,9 +5738,60 @@ document.querySelector('[data-mode="fleet"]')?.addEventListener("click", () => {
 });
 
 // ============================================================
-// INTUNE — WINDOWS DEVICE CONTEXT IN TICKETS
+// INTUNE + SCREENCONNECT — combined loader
 // ============================================================
-async function loadIntuneTicketContext(ticketId, ticket) {
+async function loadIntuneAndSCContext(ticketId, ticket) {
+  const email = ticket.requester_email || ticket.email || ticket.custom_fields?.employee_email || "";
+  if (!email) return;
+
+  // Load Intune
+  const intuneHost = document.getElementById(`intuneCtx_${ticketId}`);
+  const scHost = document.getElementById(`scCtx_${ticketId}`);
+
+  try {
+    const res = await fetch(`/api/intune?action=user&email=${encodeURIComponent(email)}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const devices = data.devices || [];
+
+    if (!devices.length) {
+      if (intuneHost) intuneHost.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No Windows devices found for ${email} in Intune</div>`;
+    } else {
+      if (intuneHost) intuneHost.innerHTML = devices.slice(0, 2).map(d => {
+        const days = d.lastSyncDateTime ? Math.floor((Date.now() - new Date(d.lastSyncDateTime)) / 86400000) : null;
+        const daysLabel = days === null ? "never" : days === 0 ? "today" : `${days}d ago`;
+        const compColor = d.complianceState === "compliant" ? "var(--ok)" : d.complianceState === "noncompliant" ? "var(--danger)" : "var(--warn)";
+        return `
+          <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">
+              <div>
+                <div style="font-size:13px;font-weight:600;color:var(--ink)">${d.deviceName||"Unknown"}</div>
+                <div style="font-size:11px;color:var(--ink-dim)">${d.manufacturer||""} ${d.model||""} · ${d.operatingSystem||""} ${d.osVersion||""}</div>
+              </div>
+              <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:${d.complianceState==="compliant"?"var(--ok-dim)":d.complianceState==="noncompliant"?"var(--danger-dim)":"var(--warn-dim)"};color:${compColor}">${d.complianceState||"unknown"}</span>
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap">
+              <span style="padding:2px 8px;border-radius:20px;font-size:10px;background:${d.isEncrypted?"var(--ok-dim)":"var(--danger-dim)"};color:${d.isEncrypted?"var(--ok)":"var(--danger)"}">${d.isEncrypted?"🔒 Encrypted":"🔓 Not encrypted"}</span>
+              <span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--panel);color:var(--ink-dim)">⟳ ${daysLabel}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // Use the first Windows device name/serial to search ScreenConnect
+      // (only if Kandji didn't already find a Mac and trigger SC)
+      const kandjiHost = document.getElementById(`kandjiCtx_${ticketId}`);
+      const kandjiFoundMac = kandjiHost && !kandjiHost.innerHTML.includes("No Mac found") && !kandjiHost.innerHTML.includes("No email");
+      if (!kandjiFoundMac && scHost && devices[0]?.deviceName) {
+        const windowsDevice = devices[0];
+        const searchTerm = windowsDevice.serialNumber || windowsDevice.deviceName;
+        loadScreenConnectBySerial(ticketId, searchTerm, windowsDevice.deviceName);
+      }
+    }
+  } catch(e) {
+    if (intuneHost) intuneHost.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">Intune unavailable: ${e.message}</div>`;
+  }
+}
   const host = document.getElementById(`intuneCtx_${ticketId}`);
   if (!host) return;
 
@@ -5748,7 +5836,6 @@ async function loadIntuneTicketContext(ticketId, ticket) {
   } catch(e) {
     host.innerHTML = `<div style="color:var(--ink-ghost);font-size:11px">Intune unavailable: ${e.message}</div>`;
   }
-}
 
 // session clock
 function updateClock(){
