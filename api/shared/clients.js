@@ -54,21 +54,12 @@ async function fsRequest(path, options = {}) {
 }
 
 async function fsGetAllOpenTickets() {
-  // Fetch only open tickets (status 2=Open, 3=Pending, 6=Hold)
+  // Fetch all tickets then filter to open statuses (2=Open, 3=Pending, 6=Hold)
   // include=requester brings back requester email and name
-  const results = [];
-  const statuses = [2, 3, 6];
-  for (const status of statuses) {
-    try {
-      const data = await fsRequest(`/tickets?status=${status}&per_page=100&include=requester`);
-      results.push(...(data.tickets || []));
-    } catch(e) {
-      // fallback: try without status filter if it fails
-    }
-  }
-  // Deduplicate by id
-  const seen = new Set();
-  return results.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+  const data = await fsRequest(`/tickets?per_page=100&include=requester&order_type=desc&order_by=created_at`);
+  const all = data.tickets || [];
+  // Filter to only active/open statuses — exclude Resolved(4) and Closed(5)
+  return all.filter(t => t.status === 2 || t.status === 3 || t.status === 6);
 }
 
 async function fsGetTicket(id) {
