@@ -25,23 +25,11 @@ function extHeaders() {
 // GET with body — SC extension uses GET for reads but still accepts body params
 async function extGet(method, bodyParams = []) {
   const url = extUrl(method);
-  const headers = extHeaders();
-
-  // Try GET first (per docs), fall back to POST if needed
-  let res = await fetch(url, {
-    method: "GET",
-    headers,
-    body: bodyParams.length ? JSON.stringify(bodyParams) : undefined
+  const res = await fetch(url, {
+    method: "POST",
+    headers: extHeaders(),
+    body: JSON.stringify(bodyParams)
   });
-
-  // Some SC versions reject GET with body — retry as POST
-  if (!res.ok && res.status === 500) {
-    res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(bodyParams)
-    });
-  }
 
   if (res.status === 401) throw new Error("Auth failed — check SCREENCONNECT_SECRET");
   if (res.status === 403) throw new Error("Forbidden — check SCREENCONNECT_ORIGIN matches your SC instance URL");
