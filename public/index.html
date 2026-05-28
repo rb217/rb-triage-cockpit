@@ -1016,10 +1016,67 @@
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: var(--r-full); }
   ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
 
+  /* ══ COMMAND PALETTE — Apple Spotlight ══ */
+  #cmdPalette {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    z-index: 300;
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 15vh;
+  }
+  #cmdPalette.open { display: flex; animation: fadeIn .15s ease; }
+  #cmdPaletteBox {
+    background: rgba(22,22,32,0.95);
+    border: 0.5px solid var(--sep-hot);
+    border-radius: var(--r-2xl);
+    width: 560px; max-width: 90vw;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.7), 0 0 0 0.5px var(--sep);
+    overflow: hidden;
+    animation: cmdIn .2s cubic-bezier(0.25,0.46,0.45,0.94);
+  }
+  @keyframes cmdIn { from{transform:scale(0.95) translateY(-10px);opacity:0} to{transform:scale(1) translateY(0);opacity:1} }
+  #cmdInput {
+    width: 100%; padding: 16px 20px;
+    background: transparent; border: none; border-bottom: 0.5px solid var(--sep);
+    color: var(--label); font-family: var(--sans);
+    font-size: 17px; font-weight: 400;
+    outline: none; letter-spacing: -0.2px;
+  }
+  #cmdInput::placeholder { color: var(--label-3); }
+  #cmdResults { max-height: 400px; overflow-y: auto; padding: 8px; }
+  .cmd-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--label-3); padding: 8px 10px 4px; }
+  .cmd-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: var(--r-md);
+    cursor: pointer; transition: .1s; font-size: 13px;
+  }
+  .cmd-item:hover, .cmd-item.selected { background: rgba(10,132,255,0.12); }
+  .cmd-item .cmd-icon { width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--fill-secondary); display: grid; place-items: center; font-size: 16px; flex-shrink: 0; }
+  .cmd-item .cmd-label { flex: 1; color: var(--label); font-weight: 500; }
+  .cmd-item .cmd-shortcut { font-size: 11px; color: var(--label-3); font-family: var(--mono); }
+  .cmd-item .cmd-hint { font-size: 11px; color: var(--label-2); }
+  #cmdFooter { padding: 10px 16px; border-top: 0.5px solid var(--sep); display: flex; gap: 14px; font-size: 11px; color: var(--label-3); }
+  #cmdFooter kbd { background: var(--fill-secondary); border: 0.5px solid var(--sep); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 10px; }
+
   /* ══ UTILITIES ══ */
   .empty-state { padding:60px 20px; text-align:center; color:var(--label-2); }
   .empty-state .big { font-size:28px; color:var(--label-3); margin-bottom:8px; font-weight:300; letter-spacing:-0.5px; }
   .hidden { display:none !important; }
+
+
+    background: var(--fill-secondary); border: 0.5px solid var(--sep);
+    color: var(--label-2); font-family: var(--sans); font-size: 12px; font-weight: 500;
+    padding: 5px 12px; cursor: pointer; border-radius: var(--r-full);
+    transition: .15s; white-space: nowrap;
+  }
+  .fleet-filter-btn:hover { color: var(--label); border-color: var(--sep-hot); }
+  .fleet-filter-btn.active { background: var(--accent-dim); color: var(--label); border-color: rgba(10,132,255,0.3); font-weight: 600; }
+
+
 
 </style>
 </head>
@@ -1329,38 +1386,41 @@
 
 <!-- KNOWLEDGE BASE VIEW -->
 <div class="hidden" id="mainKb" style="overflow-y:auto;padding:20px 24px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:20px">
     <div>
-      <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">🧠 Institutional Memory</h2>
-      <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">AI-extracted resolutions from closed tickets · searchable knowledge base</div>
+      <h2 style="font-size:22px;font-weight:700;letter-spacing:-0.5px;color:var(--label)">Knowledge Base</h2>
+      <div style="font-size:13px;color:var(--label-2);margin-top:4px">Freshservice solution articles · AI-powered search</div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn ghost" id="refreshKbBtn">⟳ Refresh</button>
-    </div>
+    <button class="btn ghost" id="refreshKbBtn" style="flex-shrink:0">⟳ Refresh</button>
   </div>
 
-  <!-- Search bar -->
-  <div style="display:flex;gap:8px;margin-bottom:16px">
-    <div style="position:relative;flex:1">
-      <input id="kbSearch" type="text" placeholder="Search knowledge base…"
-        style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:8px 12px 8px 32px;font-family:var(--sans);font-size:13px;outline:none"
-        oninput="searchKB()"/>
-      <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:14px">🔍</span>
-    </div>
-    <select id="kbCategory" onchange="searchKB()"
-      style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 10px;font-family:var(--sans);font-size:13px;outline:none">
-      <option value="">All categories</option>
-      <option>Hardware</option><option>Software</option><option>Network</option>
-      <option>NetSuite</option><option>Employee Onboarding/Offboarding</option>
-    </select>
+  <!-- AI Search bar -->
+  <div style="position:relative;margin-bottom:14px">
+    <input id="kbSearch" type="text" placeholder="Ask anything — &quot;what do I do when someone can't access NetSuite?&quot;"
+      style="width:100%;background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-lg);color:var(--label);padding:11px 48px 11px 16px;font-family:var(--sans);font-size:13px;outline:none;transition:.2s"
+      onfocus="this.style.borderColor='var(--sys-blue)';this.style.background='rgba(10,132,255,0.04)'"
+      onblur="this.style.borderColor='var(--sep)';this.style.background='var(--surface-1)'"
+      onkeydown="if(event.key==='Enter')searchKBWithAI(this.value)"
+    />
+    <button onclick="searchKBWithAI(document.getElementById('kbSearch').value)"
+      style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--sys-blue);border:none;color:#fff;border-radius:var(--r-md);padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans)">Search</button>
+  </div>
+
+  <!-- Category filter pills -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+    <button onclick="renderKBGrid(_kbData)" class="btn" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">All</button>
+    ${["Hardware","Software","Network","NetSuite","Onboarding"].map(c=>`
+      <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('${c.toLowerCase()}'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">${c}</button>
+    `).join("")}
   </div>
 
   <!-- Stats strip -->
-  <div id="kbStats" style="display:flex;gap:10px;margin-bottom:16px"></div>
+  <div id="kbStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px"></div>
 
   <!-- Article grid -->
-  <div id="kbGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px">
-    <div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">
+  <div id="kbGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:8px">
+    <div style="text-align:center;padding:60px;color:var(--label-2);font-size:13px;grid-column:1/-1">
       <div class="loader" style="margin:0 auto 12px"></div>Loading knowledge base…
     </div>
   </div>
@@ -1412,42 +1472,53 @@
 <div class="hidden" id="mainFleet" style="overflow-y:auto;padding:20px 24px">
 
   <!-- Header -->
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:20px">
     <div>
-      <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">🍎 Mac Fleet</h2>
-      <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Kandji/Iru MDM · device compliance · security posture</div>
+      <h2 style="font-size:22px;font-weight:700;letter-spacing:-0.5px">Mac Fleet</h2>
+      <div style="font-size:13px;color:var(--label-2);margin-top:4px">Kandji MDM · device compliance · security posture</div>
     </div>
-    <button class="btn ghost" id="refreshFleetBtn">⟳ Refresh</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn ghost" id="bulkFleetBtn" style="font-size:12px">Select All</button>
+      <button class="btn ghost" id="refreshFleetBtn">⟳ Refresh</button>
+    </div>
   </div>
 
   <!-- Compliance summary strip -->
-  <div id="fleetSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px"></div>
+  <div id="fleetSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px"></div>
+
+  <!-- OS Distribution + FileVault insight row -->
+  <div id="fleetInsights" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px"></div>
+
+  <!-- Bulk actions bar (hidden until devices selected) -->
+  <div id="fleetBulkBar" style="display:none;background:var(--accent-dim);border:0.5px solid rgba(10,132,255,0.3);border-radius:var(--r-lg);padding:10px 14px;margin-bottom:12px;align-items:center;gap:10px;justify-content:space-between">
+    <span id="fleetBulkCount" style="font-size:13px;font-weight:600;color:var(--sys-blue)">0 selected</span>
+    <div style="display:flex;gap:6px">
+      <button class="btn" style="font-size:12px;padding:5px 12px" onclick="bulkFleetAction('checkin')">⟳ Force Check-in All</button>
+      <button class="btn ghost" style="font-size:12px;padding:5px 12px" onclick="clearFleetSelection()">✕ Clear</button>
+    </div>
+  </div>
 
   <!-- Filter bar -->
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
     <div style="position:relative;flex:1;min-width:200px">
       <input id="fleetSearch" type="text" placeholder="Search name, serial, user…"
-        style="width:100%;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:7px 12px 7px 30px;font-family:var(--sans);font-size:13px;outline:none;box-sizing:border-box"
+        style="width:100%;background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-lg);color:var(--label);padding:7px 12px 7px 30px;font-family:var(--sans);font-size:13px;outline:none;transition:.15s"
+        onfocus="this.style.borderColor='var(--sys-blue)'" onblur="this.style.borderColor='var(--sep)'"
         oninput="_fleetPage=0;renderFleetList()"/>
-      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--ink-dim);font-size:13px">🔍</span>
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--label-3);font-size:13px">⌕</span>
     </div>
     <div style="display:flex;gap:4px;flex-wrap:wrap">
       <button class="fleet-filter-btn active" data-filter="all" onclick="setFleetFilter('all',this)">All</button>
-      <button class="fleet-filter-btn" data-filter="mac" onclick="setFleetFilter('mac',this)">Macs only</button>
       <button class="fleet-filter-btn" data-filter="issues" onclick="setFleetFilter('issues',this)">⚠ Issues</button>
-      <button class="fleet-filter-btn" data-filter="filevault" onclick="setFleetFilter('filevault',this)">🔓 FileVault off</button>
-      <button class="fleet-filter-btn" data-filter="stale" onclick="setFleetFilter('stale',this)">📵 Stale 5d+</button>
-      <button class="fleet-filter-btn" data-filter="offline" onclick="setFleetFilter('offline',this)">🔴 Offline</button>
+      <button class="fleet-filter-btn" data-filter="filevault" onclick="setFleetFilter('filevault',this)">🔓 No FileVault</button>
+      <button class="fleet-filter-btn" data-filter="stale" onclick="setFleetFilter('stale',this)">Stale 5d+</button>
+      <button class="fleet-filter-btn" data-filter="offline" onclick="setFleetFilter('offline',this)">Offline</button>
     </div>
-    <div id="fleetCount" style="font-size:12px;color:var(--ink-dim);white-space:nowrap"></div>
+    <div id="fleetCount" style="font-size:12px;color:var(--label-2);white-space:nowrap"></div>
   </div>
 
-  <!-- Device grid — larger cards, 2 per row -->
-  <div id="fleetGrid" style="display:grid;grid-template-columns:1fr;gap:4px">
-    <div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1">
-      <div class="loader" style="margin:0 auto 12px"></div>Loading Mac fleet…
-    </div>
-  </div>
+  <!-- Device list -->
+  <div id="fleetGrid" style="display:grid;grid-template-columns:1fr;gap:4px"></div>
 
   <!-- Pagination -->
   <div id="fleetPagination" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px;padding-bottom:20px"></div>
@@ -1711,6 +1782,20 @@
         <button class="btn ghost" id="resetSettingsBtn">Reset to defaults</button>
         <button class="btn primary" id="saveSettingsBtn">Save settings</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- COMMAND PALETTE -->
+<div id="cmdPalette">
+  <div id="cmdPaletteBox">
+    <input id="cmdInput" type="text" placeholder="Search tickets or run an action…" autocomplete="off" spellcheck="false"/>
+    <div id="cmdResults"></div>
+    <div id="cmdFooter">
+      <span><kbd>↑↓</kbd> Navigate</span>
+      <span><kbd>↵</kbd> Select</span>
+      <span><kbd>Esc</kbd> Dismiss</span>
+      <span><kbd>?</kbd> Shortcuts</span>
     </div>
   </div>
 </div>
@@ -3066,155 +3151,224 @@ async function saveCurrentView(name){
 async function renderStandup(){
   const host = $("#mainStandup");
   const lastSeen = await storeGet("last_seen_ts");
-
-  // Only count ACTIVE tickets (open=2, pending=3, hold=6)
-  const ACTIVE_STATUSES = new Set([2, 3, 6]);
-  const activeTickets = TICKETS.filter(t => ACTIVE_STATUSES.has(t.status));
-
-  const newSince = lastSeen
-    ? activeTickets.filter(t => new Date(t.created_at) > new Date(lastSeen))
-    : [];
+  const ACTIVE = new Set([2,3,6]);
+  const activeTickets = TICKETS.filter(t => ACTIVE.has(t.status));
+  const myOpen = activeTickets.filter(isMine);
+  const newSince = lastSeen ? activeTickets.filter(t => new Date(t.created_at) > new Date(lastSeen)) : [];
   const breached = activeTickets.filter(t => t.due_by && new Date(t.due_by) < new Date() && isMine(t));
-  const atRisk = activeTickets.filter(t => {
-    if(!isMine(t) || !t.due_by) return false;
-    const ms = new Date(t.due_by) - Date.now();
-    return ms > 0 && ms < 4 * 3600000;
-  });
+  const atRisk = activeTickets.filter(t => { if(!isMine(t)||!t.due_by) return false; const ms=new Date(t.due_by)-Date.now(); return ms>0&&ms<4*3600000; });
   const urgent = activeTickets.filter(t => isMine(t) && t.priority === 4);
   const stale = activeTickets.filter(t => isMine(t) && ageHours(t.created_at) > 168);
-  const myOpen = activeTickets.filter(isMine);
   const unassigned = activeTickets.filter(t => !t.responder_name);
-
-  // Team breakdown
-  const steveOpen = activeTickets.filter(t => t.responder_name?.toLowerCase().includes("steve")).length;
-  const ericOpen = activeTickets.filter(t => t.responder_name?.toLowerCase().includes("eric")).length;
-
+  const steveOpen = activeTickets.filter(t => (t.responder_name||"").toLowerCase().includes("steve")).length;
+  const ericOpen  = activeTickets.filter(t => (t.responder_name||"").toLowerCase().includes("eric")).length;
+  const firstName = ME?.name?.split(" ")[0] || ME?.email?.split("@")[0] || "there";
   const today = new Date().toLocaleDateString(undefined, {weekday:"long", year:"numeric", month:"long", day:"numeric"});
   const last = lastSeen ? new Date(lastSeen).toLocaleString() : "first visit";
+  const focusMode = await storeGet("standup_focus") === "true";
 
-  // Get first name from principal
-  const firstName = ME?.name?.split(" ")[0] || ME?.email?.split("@")[0] || "there";
+  // ── Status color helper
+  const sc = (n, warn=1, danger=0) => n >= danger && danger >= 0 && n > 0 ? (n > danger ? "alert" : "warn") : (n >= warn ? "warn" : "ok");
 
-  const queueHost = '<div id="aiQueueHost"><div style="text-align:center;padding:20px;color:var(--ink-dim);font-size:11px"><span class="loader"></span> Generating AI priority queue...</div></div>';
+  // ── Priority queue candidates
+  const queueCandidates = [...breached,...atRisk,...urgent,...stale,...myOpen]
+    .filter((t,i,a)=>a.findIndex(x=>x.id===t.id)===i).slice(0,15);
+
+  // ── Morning briefing (Claude-written if API key available, otherwise template)
+  const briefingId = `briefing_${Date.now()}`;
 
   host.innerHTML = `
-    <div class="standup-card">
-      <h2>Good ${getTimeOfDay()}, ${firstName}</h2>
-      <div class="sub">${today} · Last visit: ${last}</div>
-      <div class="standup-row"><span class="lbl">New since last visit</span><span class="val ${newSince.length>0?"warn":"ok"}">${newSince.length}</span></div>
-      <div class="standup-row"><span class="lbl">My active tickets</span><span class="val">${myOpen.length}</span></div>
-      <div class="standup-row"><span class="lbl">SLA breached</span><span class="val ${breached.length>0?"alert":"ok"}">${breached.length}</span></div>
-      <div class="standup-row"><span class="lbl">At risk (&lt; 4h to SLA)</span><span class="val ${atRisk.length>0?"warn":"ok"}">${atRisk.length}</span></div>
-      <div class="standup-row"><span class="lbl">Stale (&gt; 7d, no update)</span><span class="val ${stale.length>0?"warn":"ok"}">${stale.length}</span></div>
-      <div class="standup-row"><span class="lbl">Unassigned</span><span class="val ${unassigned.length>0?"warn":""}">${unassigned.length}</span></div>
+    <!-- FOCUS MODE TOGGLE -->
+    <div style="display:flex;justify-content:flex-end;padding:12px 20px 0;gap:8px">
+      <button class="btn ghost" id="focusModeBtn" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full);${focusMode?'background:var(--sys-blue);color:#fff;':''}">
+        ${focusMode ? "⊙ Focus ON" : "○ Focus OFF"}
+      </button>
+      <button class="btn ghost" onclick="renderStandup()" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">⟳ Refresh</button>
     </div>
 
-    <div class="standup-card">
-      <h2>Team snapshot</h2>
-      <div class="sub">active tickets by agent · click to filter</div>
-      <div class="standup-row" data-standup-filter="Nathan Maharg" style="cursor:pointer" onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
-        <span class="lbl" style="display:flex;align-items:center;gap:6px">
-          <span style="width:22px;height:22px;border-radius:50%;background:rgba(99,102,241,0.2);color:#6366f1;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">NM</span>
-          Nathan Maharg
-        </span>
-        <span class="val">${myOpen.length}</span>
-      </div>
-      <div class="standup-row" data-standup-filter="Steve Mitchell" style="cursor:pointer" onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
-        <span class="lbl" style="display:flex;align-items:center;gap:6px">
-          <span style="width:22px;height:22px;border-radius:50%;background:rgba(74,222,128,0.2);color:#34d399;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">SM</span>
-          Steve Mitchell
-        </span>
-        <span class="val">${steveOpen}</span>
-      </div>
-      <div class="standup-row" data-standup-filter="Eric Hnatov" style="cursor:pointer" onmouseover="this.style.background='var(--panel-2)'" onmouseout="this.style.background='transparent'">
-        <span class="lbl" style="display:flex;align-items:center;gap:6px">
-          <span style="width:22px;height:22px;border-radius:50%;background:rgba(251,191,36,0.2);color:#fbbf24;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">EH</span>
-          Eric Hnatov
-        </span>
-        <span class="val">${ericOpen}</span>
-      </div>
-      <div class="standup-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-        <span class="lbl">Total active queue</span>
-        <span class="val">${activeTickets.length}</span>
-      </div>
-    </div>
+    <div class="standup" id="standupGrid" style="${focusMode?'grid-template-columns:1fr;':''}">
 
-    <div class="standup-card">
-      <h2>What changed</h2>
-      <div class="sub">new active tickets since your last visit</div>
-      ${newSince.length === 0
-        ? `<div style="color:var(--ink-ghost);font-size:12px;font-style:italic;padding:8px 0">No new tickets since you were last here. ☕</div>`
-        : `<div class="standup-list">${newSince.slice(0,8).map((t,i)=>renderStandupItem(t,i+1,"NEW")).join("")}</div>`
-      }
-    </div>
+      <!-- MORNING BRIEFING — full width -->
+      <div class="standup-card wide" id="${briefingId}" style="background:linear-gradient(135deg,rgba(10,132,255,0.08) 0%,rgba(94,92,230,0.06) 100%);border-color:rgba(10,132,255,0.2)">
+        <div style="display:flex;align-items:start;gap:12px">
+          <div style="width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,var(--sys-blue),var(--sys-indigo));display:grid;place-items:center;font-size:20px;flex-shrink:0;box-shadow:0 4px 16px rgba(10,132,255,0.25)">☀️</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:18px;font-weight:700;letter-spacing:-0.4px;margin-bottom:2px">Good ${getTimeOfDay()}, ${firstName}</div>
+            <div style="font-size:12px;color:var(--label-2)">${today}</div>
+            <div id="aiMorningBrief" style="margin-top:10px;font-size:13px;color:var(--label-2);line-height:1.65">
+              <span class="loader" style="display:inline-block;margin-right:6px"></span>Writing your morning briefing…
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <div class="standup-card">
-      <h2>Needs attention</h2>
-      <div class="sub">urgent + high priority active tickets</div>
-      ${urgent.length === 0
-        ? `<div style="color:var(--ink-ghost);font-size:12px;font-style:italic;padding:8px 0">No urgent tickets right now. 🎉</div>`
-        : `<div class="standup-list">${urgent.slice(0,6).map((t,i)=>renderStandupItem(t,i+1,"URGENT")).join("")}</div>`
-      }
-    </div>
+      <!-- MY STATUS -->
+      <div class="standup-card">
+        <h2 style="display:flex;align-items:center;gap:8px">My Queue
+          ${myOpen.length > 0 ? `<span style="background:var(--sys-blue);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">${myOpen.length}</span>` : ""}
+        </h2>
+        <div class="sub">Since last visit: ${last}</div>
+        ${[
+          ["New arrivals",   newSince.length,  newSince.length>0?"warn":"ok"],
+          ["SLA breached",   breached.length,  breached.length>0?"alert":"ok"],
+          ["At risk < 4h",   atRisk.length,    atRisk.length>0?"warn":"ok"],
+          ["Urgent",         urgent.length,    urgent.length>0?"alert":"ok"],
+          ["Stale > 7 days", stale.length,     stale.length>0?"warn":"ok"],
+          ["Unassigned",     unassigned.length,unassigned.length>0?"warn":""],
+        ].map(([lbl,val,cls])=>`
+          <div class="standup-row">
+            <span class="lbl">${lbl}</span>
+            <span class="val ${cls}">${val}</span>
+          </div>
+        `).join("")}
+      </div>
 
-    <div class="standup-card wide">
-      <h2>Today's AI-prioritized queue</h2>
-      <div class="sub">what to tackle first, based on urgency, SLA risk, and impact</div>
-      ${queueHost}
+      <!-- TEAM PULSE -->
+      <div class="standup-card">
+        <h2>Team Pulse</h2>
+        <div class="sub">active tickets by agent</div>
+        ${[
+          {name:"Nathan Maharg",  initials:"NM", count:myOpen.length,   color:"var(--sys-blue)"},
+          {name:"Steve Mitchell", initials:"SM", count:steveOpen,       color:"var(--sys-green)"},
+          {name:"Eric Hnatov",    initials:"EH", count:ericOpen,        color:"var(--sys-orange)"},
+        ].map(a=>`
+          <div class="standup-row" style="cursor:pointer" onclick="switchMode('triage');FILTERS.scope='all';FILTERS.responder='${a.name}';renderList();updateCounts()"
+            onmouseover="this.style.background='var(--fill-secondary)'"
+            onmouseout="this.style.background='transparent'">
+            <span class="lbl" style="display:flex;align-items:center;gap:8px">
+              <span style="width:26px;height:26px;border-radius:var(--r-full);background:${a.color}22;color:${a.color};font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${a.initials}</span>
+              ${a.name}
+            </span>
+            <span class="val" style="font-size:20px">${a.count}</span>
+          </div>
+        `).join("")}
+        <div class="standup-row" style="margin-top:6px;border-top:0.5px solid var(--sep);padding-top:10px">
+          <span class="lbl" style="font-weight:600">Total active</span>
+          <span class="val" style="color:var(--sys-blue)">${activeTickets.length}</span>
+        </div>
+      </div>
+
+      <!-- NEW SINCE LAST VISIT -->
+      ${!focusMode ? `
+      <div class="standup-card">
+        <h2>What's New</h2>
+        <div class="sub">tickets opened since your last visit</div>
+        ${newSince.length === 0
+          ? `<div style="color:var(--label-3);font-size:12px;padding:12px 0;text-align:center">
+              <div style="font-size:24px;margin-bottom:6px">🎉</div>
+              No new tickets since your last visit
+            </div>`
+          : `<div class="standup-list">${newSince.slice(0,6).map((t,i)=>renderStandupItem(t,i+1,"NEW")).join("")}</div>`
+        }
+      </div>` : ""}
+
+      <!-- NEEDS ATTENTION -->
+      <div class="standup-card ${focusMode?"wide":""}">
+        <h2>Needs Attention</h2>
+        <div class="sub">${focusMode?"all urgent + breaching":"urgent + high priority"}</div>
+        ${[...new Map([...breached,...urgent,...atRisk].map(t=>[t.id,t])).values()].length === 0
+          ? `<div style="color:var(--label-3);font-size:12px;padding:12px 0;text-align:center">
+              <div style="font-size:24px;margin-bottom:6px">✓</div>
+              Nothing urgent right now
+            </div>`
+          : `<div class="standup-list">${[...new Map([...breached,...urgent,...atRisk].map(t=>[t.id,t])).values()].slice(0,focusMode?12:5).map((t,i)=>renderStandupItem(t,i+1,breached.find(x=>x.id===t.id)?"BREACH":urgent.find(x=>x.id===t.id)?"URGENT":"AT RISK")).join("")}</div>`
+        }
+      </div>
+
+      <!-- AI PRIORITY QUEUE — full width -->
+      <div class="standup-card wide">
+        <h2>AI Priority Queue</h2>
+        <div class="sub">what to tackle first, based on urgency, SLA risk, and business impact</div>
+        <div id="aiQueueHost">
+          <div style="text-align:center;padding:20px;color:var(--label-2);font-size:12px">
+            <span class="loader" style="display:inline-block;margin-right:8px"></span>Generating priority queue…
+          </div>
+        </div>
+      </div>
+
     </div>
   `;
 
-  // wire row clicks
+  // Wire focus mode toggle
+  host.querySelector("#focusModeBtn")?.addEventListener("click", async () => {
+    await storeSet("standup_focus", focusMode ? "false" : "true");
+    renderStandup();
+  });
+
+  // Wire item clicks
   host.querySelectorAll(".si").forEach(el => el.addEventListener("click", () => {
-    const id = parseInt(el.dataset.tid);
-    switchMode("triage");
-    selectTicket(id);
+    switchMode("triage"); selectTicket(parseInt(el.dataset.tid));
   }));
 
-  // generate AI priority queue
-  const candidates = [...breached, ...atRisk, ...urgent, ...stale, ...myOpen]
-    .filter((t,i,a) => a.findIndex(x => x.id === t.id) === i)
-    .slice(0, 15);
-
-  if(candidates.length){
-    try{
-      const queue = await generateAIQueue(candidates);
-      const qhost = $("#aiQueueHost");
-      if(qhost && queue.length){
-        qhost.innerHTML = `<div class="standup-list">${queue.map((q,i) => {
-          const t = TICKETS.find(x => x.id === q.id);
-          if(!t) return "";
-          return `<div class="si" data-tid="${t.id}">
-            <div class="si-num">${i+1}</div>
-            <div class="si-body">
-              <div class="subj">${escape(t.subject)}</div>
-              <div class="why"><strong style="color:var(--accent);font-style:normal">Why first:</strong> ${escape(q.reason)}</div>
-              <div class="meta">#${t.id} · ${escape(t.requester_name||"unknown")} · ${formatAge(t.created_at)} old</div>
-            </div>
-            <span class="pill ${PRIO_CLASS[t.priority]||""} si-prio">${PRIO_MAP[t.priority]||"?"}</span>
-          </div>`;
-        }).join("")}</div>`;
-        qhost.querySelectorAll(".si").forEach(el => el.addEventListener("click", () => {
-          switchMode("triage");
-          selectTicket(parseInt(el.dataset.tid));
-        }));
-      } else if(qhost){
-        qhost.innerHTML = `<div style="color:var(--ink-ghost);font-style:italic;padding:8px 0;font-size:12px">Nothing urgent on your plate right now. 🎉</div>`;
-      }
-    } catch(e){
-      console.error(e);
-      const qhost = $("#aiQueueHost");
-      if(qhost) qhost.innerHTML = `<div style="color:var(--danger);font-size:11px">AI queue unavailable: ${escape(e.message)}</div>`;
+  // Generate AI morning briefing
+  (async () => {
+    const el = document.getElementById("aiMorningBrief");
+    if (!el) return;
+    try {
+      const res = await fetch("/api/aiTriage", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          action: "morning_brief",
+          tickets: myOpen.slice(0,20).map(t=>({id:t.id,subject:t.subject,priority:t.priority,category:t.category,created_at:t.created_at,due_by:t.due_by,requester_name:t.requester_name})),
+          stats: { myOpen:myOpen.length, breached:breached.length, atRisk:atRisk.length, urgent:urgent.length, stale:stale.length, newSince:newSince.length },
+          agentName: firstName
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.brief && el) el.innerHTML = `<div style="line-height:1.7">${data.brief.replace(/\n/g,'<br>')}</div>`;
+      } else throw new Error(`${res.status}`);
+    } catch(e) {
+      // Fallback to template briefing
+      const parts = [];
+      if (breached.length) parts.push(`<span style="color:var(--sys-red);font-weight:600">${breached.length} ticket${breached.length>1?"s are":"is"} breaching SLA</span>`);
+      if (atRisk.length) parts.push(`${atRisk.length} approaching SLA in under 4 hours`);
+      if (urgent.length) parts.push(`${urgent.length} urgent ticket${urgent.length>1?"s":""} need${urgent.length===1?"s":""} immediate attention`);
+      if (newSince.length) parts.push(`${newSince.length} new ticket${newSince.length>1?"s have":"has"} arrived since your last visit`);
+      if (el) el.innerHTML = parts.length
+        ? `You have ${myOpen.length} active tickets. ${parts.join(", ")}. ${stale.length>0?`${stale.length} ticket${stale.length>1?"s are":"is"} stale — check in today.`:""}`
+        : `You have ${myOpen.length} active tickets and everything looks on track. Have a great day! ☀️`;
     }
+  })();
+
+  // Generate AI priority queue
+  if (queueCandidates.length) {
+    (async () => {
+      try {
+        const queue = await generateAIQueue(queueCandidates);
+        const qhost = $("#aiQueueHost");
+        if (qhost && queue.length) {
+          qhost.innerHTML = `<div class="standup-list">${queue.map((q,i) => {
+            const t = TICKETS.find(x => x.id === q.id);
+            if(!t) return "";
+            return `<div class="si" data-tid="${t.id}">
+              <div class="si-num">${i+1}</div>
+              <div class="si-body">
+                <div class="subj">${escape(t.subject)}</div>
+                <div class="why"><strong style="color:var(--sys-blue);font-style:normal">Why first:</strong> ${escape(q.reason)}</div>
+                <div class="meta">#${t.id} · ${escape(t.requester_name||"unknown")} · ${formatAge(t.created_at)} old</div>
+              </div>
+              <span class="pill ${PRIO_CLASS[t.priority]||""} si-prio">${PRIO_MAP[t.priority]||"?"}</span>
+            </div>`;
+          }).join("")}</div>`;
+          qhost.querySelectorAll(".si").forEach(el=>el.addEventListener("click",()=>{switchMode("triage");selectTicket(parseInt(el.dataset.tid));}));
+        } else if(qhost) {
+          qhost.innerHTML = `<div style="color:var(--label-3);text-align:center;padding:20px;font-size:12px">Nothing needs prioritizing right now 🎉</div>`;
+        }
+      } catch(e) {
+        const qhost = $("#aiQueueHost");
+        if(qhost) qhost.innerHTML = `<div style="color:var(--sys-red);font-size:11px;padding:8px">AI queue unavailable: ${escape(e.message)}</div>`;
+      }
+    })();
   } else {
     const qhost = $("#aiQueueHost");
-    if(qhost) qhost.innerHTML = `<div style="color:var(--ink-ghost);font-style:italic;padding:8px 0;font-size:12px">No tickets need your attention right now. 🎉</div>`;
+    if(qhost) qhost.innerHTML = `<div style="color:var(--label-3);text-align:center;padding:20px;font-size:12px">No tickets in your queue right now 🎉</div>`;
   }
 
-  // mark this as the new "last seen"
   LAST_SEEN_TIMESTAMP = new Date().toISOString();
   await storeSet("last_seen_ts", LAST_SEEN_TIMESTAMP);
 }
+
 
 function renderStandupItem(t, n, badge){
   return `<div class="si" data-tid="${t.id}">
@@ -3259,84 +3413,140 @@ async function generateAIQueue(candidates){
 // PATTERN DETECTION
 // ============================================================
 async function detectPatterns(){
+  const host = $("#mainPatterns");
   if(TICKETS.length < 3){
     PATTERNS = [];
     renderPatterns();
     updateCounts();
     return;
   }
-  const host = $("#mainPatterns");
-  host.innerHTML = `<div style="padding:40px;text-align:center;color:var(--ink-dim)"><span class="loader"></span> Analyzing patterns across ${TICKETS.length} tickets...</div>`;
+  host.innerHTML = `
+    <div style="padding:60px 24px;text-align:center">
+      <div class="loader" style="width:24px;height:24px;border-width:2.5px;margin:0 auto 16px"></div>
+      <div style="font-size:14px;color:var(--label-2);font-weight:500">Analyzing ${TICKETS.length} tickets for patterns…</div>
+      <div style="font-size:12px;color:var(--label-3);margin-top:6px">Looking for clusters, trends, and incident signals</div>
+    </div>`;
 
   try{
     const res = await fetch("/api/aiTriage", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
+      method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
-        mode: "patterns",
-        payload: {
-          tickets: TICKETS.map(t=>({
-            id: t.id, subject: t.subject, description_text: t.description_text,
-            category: t.category, sub_category: t.sub_category,
-            priority: t.priority, requester_name: t.requester_name
-          }))
-        }
+        mode:"patterns",
+        payload:{ tickets: TICKETS.map(t=>({id:t.id,subject:t.subject,description_text:t.description_text,category:t.category,sub_category:t.sub_category,priority:t.priority,requester_name:t.requester_name,created_at:t.created_at})) }
       })
     });
     if(!res.ok) throw new Error("API "+res.status);
     const data = await res.json();
-    PATTERNS = data.result;
+    PATTERNS = data.result || [];
+
+    // Update badge
+    const badge = document.getElementById("patternsBadge");
+    if(badge) { badge.textContent = PATTERNS.length || "0"; badge.style.display = PATTERNS.length ? "" : "none"; }
+
     renderPatterns();
     updateCounts();
-    renderList(); // re-render to add cluster pills
+    renderList();
   }catch(e){
     console.error(e);
-    host.innerHTML = `<div style="padding:40px;color:var(--danger)">Pattern analysis failed: ${escape(e.message)}</div>`;
+    host.innerHTML = `<div style="padding:40px;color:var(--sys-red);text-align:center;font-size:13px">Pattern analysis failed: ${escape(e.message)}<br><button class="btn" style="margin-top:12px" onclick="detectPatterns()">Try again</button></div>`;
   }
 }
 
 function renderPatterns(){
   const host = $("#mainPatterns");
   if(!PATTERNS.length){
-    host.innerHTML = `<div class="empty-state" style="padding:80px 20px">
-      <div class="big">No patterns detected</div>
-      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">Either everything's isolated, or you need more tickets loaded.</div>
-      <button class="btn primary" id="rerunPatternsBtn" style="margin-top:20px">↻ Re-analyze</button>
-    </div>`;
-    const b = $("#rerunPatternsBtn");
-    if(b) b.addEventListener("click",detectPatterns);
+    host.innerHTML = `
+      <div style="padding:80px 24px;text-align:center">
+        <div style="width:56px;height:56px;border-radius:18px;background:var(--fill-secondary);display:grid;place-items:center;margin:0 auto 16px;font-size:24px">⌗</div>
+        <div style="font-size:17px;font-weight:600;color:var(--label-2);letter-spacing:-0.3px;margin-bottom:8px">No patterns detected</div>
+        <div style="font-size:13px;color:var(--label-3);margin-bottom:20px">All tickets appear to be isolated incidents.</div>
+        <button class="btn primary" onclick="detectPatterns()">↻ Re-analyze</button>
+      </div>`;
     return;
   }
+
+  const highSev = PATTERNS.filter(p => p.severity === "high").length;
+
   host.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding:0 4px">
-      <div>
-        <div style="font-family:var(--display);font-size:24px;font-style:italic;font-weight:600">Detected patterns</div>
-        <div style="font-size:11px;color:var(--ink-dim);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px">${PATTERNS.length} cluster${PATTERNS.length===1?"":"s"} found across ${TICKETS.length} open tickets</div>
-      </div>
-      <button class="btn" id="rerunPatternsBtn">↻ Re-analyze</button>
-    </div>
-    ${PATTERNS.map(p=>`
-      <div class="pattern-card ${p.severity||"low"}">
-        <div class="pc-sev">${(p.severity||"low").toUpperCase()} SEVERITY · ${p.ticketIds.length} tickets · ${escape(p.tag)}</div>
-        <h3>${escape(p.title)}</h3>
-        <div class="pc-desc">${escape(p.description)}</div>
-        <div class="pc-recommend"><strong style="color:var(--accent);text-transform:uppercase;font-size:10px;letter-spacing:1.5px">Recommendation</strong><br>${escape(p.recommendation)}</div>
-        <div class="pc-tickets">
-          ${p.ticketIds.map(id=>{
-            const t = TICKETS.find(x=>x.id===id);
-            if(!t) return `<span class="pc-ticket">#${id}</span>`;
-            return `<span class="pc-ticket" data-tid="${id}">#${id} — ${escape((t.subject||"").slice(0,40))}${(t.subject||"").length>40?"...":""}</span>`;
-          }).join("")}
+    <div style="padding:20px 24px">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:20px">
+        <div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:-0.5px;color:var(--label)">
+            ${PATTERNS.length} Pattern${PATTERNS.length===1?"":"s"} Detected
+          </div>
+          <div style="font-size:13px;color:var(--label-2);margin-top:4px">
+            ${highSev > 0 ? `<span style="color:var(--sys-red);font-weight:600">${highSev} high severity</span> · ` : ""}
+            Across ${TICKETS.length} open tickets · Last analyzed ${new Date().toLocaleTimeString()}
+          </div>
         </div>
+        <button class="btn" onclick="detectPatterns()" style="flex-shrink:0">↻ Re-analyze</button>
       </div>
-    `).join("")}
+
+      <!-- Pattern cards -->
+      ${PATTERNS.map(p=>{
+        const sev = p.severity || "low";
+        const sevColor = sev==="high"?"var(--sys-red)":sev==="med"?"var(--sys-orange)":"var(--sys-cyan)";
+        const sevBg = sev==="high"?"var(--danger-fill)":sev==="med"?"var(--warn-fill)":"var(--info-fill)";
+        const ticketCount = p.ticketIds?.length || 0;
+        return `
+          <div class="pattern-card ${sev}" style="margin-bottom:14px">
+            <!-- Severity + meta row -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="background:${sevBg};color:${sevColor};padding:2px 9px;border-radius:var(--r-full);font-size:10px;font-weight:700;letter-spacing:0.5px">${sev.toUpperCase()}</span>
+                <span style="font-size:11px;color:var(--label-3)">${ticketCount} tickets · ${escape(p.tag||"")}</span>
+              </div>
+              <button class="btn ghost" style="font-size:11px;padding:3px 10px;border-radius:var(--r-full)"
+                onclick="declareIncident(${JSON.stringify(p).replace(/"/g,'&quot;')})">
+                🚨 Declare Incident
+              </button>
+            </div>
+
+            <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;letter-spacing:-0.2px">${escape(p.title)}</h3>
+            <div class="pc-desc">${escape(p.description)}</div>
+
+            <!-- Recommendation -->
+            <div class="pc-recommend" style="margin-top:10px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--sys-blue);margin-bottom:5px">Recommended Action</div>
+              ${escape(p.recommendation)}
+            </div>
+
+            <!-- Linked tickets -->
+            <div class="pc-tickets" style="margin-top:10px">
+              ${(p.ticketIds||[]).map(id=>{
+                const t = TICKETS.find(x=>x.id===id);
+                return `<span class="pc-ticket" data-tid="${id}">#${id}${t?" — "+escape((t.subject||"").slice(0,35))+(t.subject?.length>35?"…":""):""}</span>`;
+              }).join("")}
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
   `;
-  host.querySelectorAll("[data-tid]").forEach(el=>el.addEventListener("click",()=>{
-    switchMode("triage");
-    selectTicket(parseInt(el.dataset.tid));
-  }));
-  const b = $("#rerunPatternsBtn");
-  if(b) b.addEventListener("click",detectPatterns);
+  host.querySelectorAll("[data-tid]").forEach(el=>el.addEventListener("click",()=>{switchMode("triage");selectTicket(parseInt(el.dataset.tid));}));
+}
+
+async function declareIncident(pattern) {
+  if(!confirm(`Declare incident for "${pattern.title}"?\n\nThis will create a parent incident ticket in Freshservice linking all ${pattern.ticketIds?.length||0} related tickets.`)) return;
+  toast("Creating incident ticket…", "info");
+  try {
+    const res = await fetch("/api/applyChanges", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        action:"create_incident",
+        title: `[INCIDENT] ${pattern.title}`,
+        description: `<b>Pattern detected:</b> ${pattern.description}<br><br><b>Recommended action:</b> ${pattern.recommendation}<br><br><b>Linked tickets:</b> ${(pattern.ticketIds||[]).map(id=>`#${id}`).join(", ")}`,
+        priority: pattern.severity==="high" ? 3 : 2,
+        category: "Other",
+        linkedTickets: pattern.ticketIds || []
+      })
+    });
+    if(res.ok) toast("✓ Incident ticket created");
+    else throw new Error(`${res.status}`);
+  } catch(e) {
+    toast(`✗ Could not create incident: ${e.message}`, "error");
+  }
 }
 
 // ============================================================
@@ -3400,6 +3610,8 @@ async function fetchTickets({silent=false}={}){
     _scLoaded.clear();
     _kandjiLoaded.clear();
     _deviceCtxCache.clear();
+    // Auto-detect patterns silently on every refresh
+    setTimeout(() => detectPatterns(), 2000);
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
     const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
@@ -3842,10 +4054,22 @@ function patchStatsStrip() {
 // 8. KEYBOARD SHORTCUTS
 let _kbFocusIdx = -1;
 document.addEventListener("keydown", e => {
+  // Command palette
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+    e.preventDefault();
+    openCmdPalette();
+    return;
+  }
+  if (e.key === "Escape") {
+    if (document.getElementById("cmdPalette")?.classList.contains("open")) {
+      closeCmdPalette(); return;
+    }
+    document.querySelectorAll(".modal-back.open").forEach(m => m.classList.remove("open"));
+    return;
+  }
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-  const tickets = Array.from(document.querySelectorAll(".ticket"));
-  if (!tickets.length) return;
 
+  const tickets = Array.from(document.querySelectorAll(".ticket"));
   if (e.key === "j" || e.key === "ArrowDown") {
     e.preventDefault();
     _kbFocusIdx = Math.min(_kbFocusIdx + 1, tickets.length - 1);
@@ -3859,15 +4083,163 @@ document.addEventListener("keydown", e => {
   } else if (e.key === " ") {
     e.preventDefault();
     tickets[_kbFocusIdx]?.querySelector(".ticket-check")?.click();
-  } else if (e.key === "?" ) {
-    showKbShortcuts();
-  } else if (e.key === "Escape") {
-    document.querySelectorAll(".modal-back.open").forEach(m => m.classList.remove("open"));
+  } else if (e.key === "?") {
+    openCmdPalette("shortcuts");
+  } else if (e.key === "t") {
+    switchMode("triage");
+  } else if (e.key === "s") {
+    switchMode("standup");
+  } else if (e.key === "n") {
+    switchMode("network");
+  } else if (e.key === "r") {
+    fetchTickets();
   }
 });
 
-function showKbShortcuts() {
-  toast("Shortcuts: J/K = navigate · Space = select · T = triage · ? = this", "info");
+// ── Command Palette ─────────────────────────────────────────────────────────
+let _cmdSelectedIdx = 0;
+
+function openCmdPalette(mode) {
+  const pal = document.getElementById("cmdPalette");
+  const inp = document.getElementById("cmdInput");
+  if (!pal || !inp) return;
+  pal.classList.add("open");
+  inp.value = "";
+  setTimeout(() => inp.focus(), 50);
+  if (mode === "shortcuts") {
+    renderCmdShortcuts();
+  } else {
+    renderCmdDefault();
+  }
+}
+
+function closeCmdPalette() {
+  document.getElementById("cmdPalette")?.classList.remove("open");
+}
+
+document.getElementById("cmdPalette")?.addEventListener("click", e => {
+  if (e.target === document.getElementById("cmdPalette")) closeCmdPalette();
+});
+
+document.getElementById("cmdInput")?.addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { renderCmdDefault(); return; }
+  renderCmdSearch(q);
+});
+
+document.getElementById("cmdInput")?.addEventListener("keydown", e => {
+  const items = document.querySelectorAll(".cmd-item");
+  if (e.key === "ArrowDown") { e.preventDefault(); _cmdSelectedIdx = Math.min(_cmdSelectedIdx+1, items.length-1); updateCmdSelection(); }
+  if (e.key === "ArrowUp")   { e.preventDefault(); _cmdSelectedIdx = Math.max(_cmdSelectedIdx-1, 0); updateCmdSelection(); }
+  if (e.key === "Enter")     { e.preventDefault(); items[_cmdSelectedIdx]?.click(); }
+  if (e.key === "Escape")    { closeCmdPalette(); }
+});
+
+function updateCmdSelection() {
+  document.querySelectorAll(".cmd-item").forEach((el,i) => el.classList.toggle("selected", i===_cmdSelectedIdx));
+  document.querySelectorAll(".cmd-item")[_cmdSelectedIdx]?.scrollIntoView({block:"nearest"});
+}
+
+function cmdItem(icon, label, hint, shortcut, action) {
+  const div = document.createElement("div");
+  div.className = "cmd-item";
+  div.innerHTML = `
+    <div class="cmd-icon">${icon}</div>
+    <div class="cmd-label">${label}</div>
+    ${hint ? `<div class="cmd-hint">${hint}</div>` : ""}
+    ${shortcut ? `<div class="cmd-shortcut">${shortcut}</div>` : ""}
+  `;
+  div.addEventListener("click", () => { closeCmdPalette(); action(); });
+  return div;
+}
+
+function renderCmdDefault() {
+  _cmdSelectedIdx = 0;
+  const res = document.getElementById("cmdResults");
+  if (!res) return;
+  res.innerHTML = '<div class="cmd-section-label">Quick Actions</div>';
+  const actions = [
+    ["⟳","Refresh Tickets","r","fetchTickets()"],
+    ["☀️","Open Standup","s","switchMode('standup')"],
+    ["⌗","Detect Patterns","","detectPatterns()"],
+    ["🌐","Network Tab","n","switchMode('network')"],
+    ["🍎","Mac Fleet","","switchMode('fleet')"],
+    ["📊","Analytics","","switchMode('analytics')"],
+    ["🧠","Knowledge Base","","switchMode('kb')"],
+    ["⚡","AI Triage All Visible","","runAITriage(Array.from(document.querySelectorAll('.ticket')).map(e=>parseInt(e.dataset.id)).filter(Boolean))"],
+  ];
+  actions.forEach(([icon,label,shortcut,action]) => {
+    res.appendChild(cmdItem(icon, label, "", shortcut, () => eval(action)));
+  });
+  if (CURRENT_ID) {
+    res.innerHTML += '<div class="cmd-section-label">Current Ticket</div>';
+    const t = TICKETS.find(x=>x.id===CURRENT_ID);
+    if (t) {
+      [
+        ["⚡","Run AI Triage",()=>runAITriage([t.id])],
+        ["✉️","Draft Reply",()=>generateDraftReply(t.id)],
+        ["✓","Resolve Ticket",()=>stageChange(t,{status:4},"resolve","Resolved","Mark resolved")],
+      ].forEach(([icon,label,action])=>res.appendChild(cmdItem(icon,label,"","",action)));
+    }
+  }
+  updateCmdSelection();
+}
+
+function renderCmdShortcuts() {
+  const res = document.getElementById("cmdResults");
+  if (!res) return;
+  res.innerHTML = `
+    <div class="cmd-section-label">Keyboard Shortcuts</div>
+    ${[
+      ["J / ↓","Next ticket",""],
+      ["K / ↑","Previous ticket",""],
+      ["Space","Select/deselect ticket",""],
+      ["R","Refresh tickets",""],
+      ["T","Switch to Triage",""],
+      ["S","Switch to Standup",""],
+      ["N","Switch to Network",""],
+      ["⌘K","Open command palette",""],
+      ["?","Show this overlay",""],
+      ["Esc","Close modals / palette",""],
+    ].map(([key,action,hint])=>`
+      <div class="cmd-item">
+        <div class="cmd-icon" style="font-size:11px;font-family:var(--mono)">${key}</div>
+        <div class="cmd-label">${action}</div>
+        ${hint?`<div class="cmd-hint">${hint}</div>`:""}
+      </div>
+    `).join("")}
+  `;
+}
+
+function renderCmdSearch(query) {
+  _cmdSelectedIdx = 0;
+  const res = document.getElementById("cmdResults");
+  if (!res) return;
+
+  // Search tickets
+  const ticketMatches = TICKETS.filter(t =>
+    t.subject?.toLowerCase().includes(query) ||
+    t.requester_name?.toLowerCase().includes(query) ||
+    String(t.id).includes(query)
+  ).slice(0,6);
+
+  if (!ticketMatches.length) {
+    res.innerHTML = `<div style="padding:20px;text-align:center;color:var(--label-3);font-size:13px">No results for "${escape(query)}"</div>`;
+    return;
+  }
+
+  res.innerHTML = '<div class="cmd-section-label">Tickets</div>';
+  ticketMatches.forEach(t => {
+    const el = cmdItem(
+      `<span style="font-size:10px;font-weight:700;font-family:var(--mono);color:var(--label-3)">#${t.id}</span>`,
+      escape(t.subject),
+      escape(t.requester_name||""),
+      PRIO_MAP[t.priority]||"",
+      () => { switchMode("triage"); selectTicket(t.id); }
+    );
+    res.appendChild(el);
+  });
+  updateCmdSelection();
 }
 
 // 9. DRAG-TO-ASSIGN
@@ -5310,7 +5682,7 @@ let _kbData = null;
 async function loadKB() {
   const grid = document.getElementById("kbGrid");
   if (!grid) return;
-  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--ink-dim);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading…</div>`;
+  grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--label-2);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 12px"></div>Loading knowledge base…</div>`;
   try {
     const res = await fetch("/api/knowledgeBase?action=list");
     if (!res.ok) throw new Error(`${res.status}`);
@@ -5318,27 +5690,76 @@ async function loadKB() {
     _kbData = data.articles || [];
     renderKBGrid(_kbData);
   } catch(err) {
-    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger);font-size:13px;grid-column:1/-1">Failed to load KB: ${err.message}</div>`;
+    grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--sys-red);font-size:13px;grid-column:1/-1">Failed to load KB: ${err.message}</div>`;
   }
 }
 
-async function searchKB() {
-  const q = document.getElementById("kbSearch")?.value?.trim();
-  const cat = document.getElementById("kbCategory")?.value;
-  if (!q && !cat) { if (_kbData) renderKBGrid(_kbData); return; }
+async function searchKBWithAI(query) {
+  if (!query.trim()) { renderKBGrid(_kbData); return; }
+  const grid = document.getElementById("kbGrid");
+  grid.innerHTML = `<div style="text-align:center;padding:40px;color:var(--label-2);font-size:13px;grid-column:1/-1"><div class="loader" style="margin:0 auto 10px"></div>Searching with AI…</div>`;
   try {
-    const params = new URLSearchParams({ action: "search" });
-    if (q) params.set("q", q);
-    if (cat) params.set("category", cat);
-    const res = await fetch("/api/knowledgeBase?" + params);
+    const res = await fetch("/api/aiTriage", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        action:"kb_search",
+        query,
+        articles: _kbData.map(a=>({id:a.id,title:a.title,description:a.description?.replace(/<[^>]+>/g," ").slice(0,300),tags:a.tags}))
+      })
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
-    renderKBGrid(data.articles || []);
-  } catch(err) {
-    if (_kbData) renderKBGrid(_kbData.filter(a =>
-      (!q || (a.title||"").toLowerCase().includes(q.toLowerCase())) &&
-      (!cat || (a.tags||[]).includes(cat))
-    ));
+    if (data.answer) {
+      const matchedIds = new Set(data.sources || []);
+      const matched = _kbData.filter(a => matchedIds.has(a.id));
+      grid.innerHTML = `
+        <div style="grid-column:1/-1;background:var(--accent-dim);border:0.5px solid rgba(10,132,255,0.3);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:4px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--sys-blue);margin-bottom:8px">🤖 AI Answer</div>
+          <div style="font-size:13px;color:var(--label);line-height:1.65">${data.answer.replace(/\n/g,'<br>')}</div>
+          ${matched.length ? `<div style="font-size:11px;color:var(--label-3);margin-top:8px">Sources: ${matched.map(a=>`<span style="color:var(--sys-blue);cursor:pointer" onclick="document.getElementById('kbSearch').value='';renderKBGrid(window._kbData)">${escape(a.title)}</span>`).join(", ")}</div>` : ""}
+        </div>
+        ${matched.length ? matched.map(a=>renderKBCard(a)).join("") : `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--label-3);font-size:13px">No matching articles found</div>`}
+      `;
+    } else {
+      // Fall back to text search
+      const q = query.toLowerCase();
+      const filtered = _kbData.filter(a => a.title?.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q) || a.tags?.some(t=>t.toLowerCase().includes(q)));
+      if (!filtered.length) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--label-3);font-size:13px">No articles match "${escape(query)}"</div>`;
+      else grid.innerHTML = filtered.map(a=>renderKBCard(a)).join("");
+    }
+  } catch(e) {
+    const q = query.toLowerCase();
+    const filtered = _kbData.filter(a => a.title?.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q));
+    grid.innerHTML = filtered.length ? filtered.map(a=>renderKBCard(a)).join("") : `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--label-3)">No results</div>`;
   }
+}
+
+function renderKBCard(a) {
+  const tags = (a.tags || []).slice(0,4);
+  const isPublished = a.status === 2;
+  const updatedDays = a.updated_at ? Math.floor((Date.now()-new Date(a.updated_at))/86400000) : null;
+  const isStale = updatedDays !== null && updatedDays > 365;
+  return `
+    <div style="background:var(--surface-1);border:0.5px solid ${isStale?'rgba(255,159,10,0.3)':'var(--sep)'};border-radius:var(--r-lg);padding:16px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:10px"
+      onmouseover="this.style.background='var(--surface-2)';this.style.borderColor='var(--sep-hot)'"
+      onmouseout="this.style.background='var(--surface-1)';this.style.borderColor='${isStale?'rgba(255,159,10,0.3)':'var(--sep)'}'"
+      onclick="window.open('https://${window.FRESHSERVICE_DOMAIN||"app.freshservice.com"}/a/solutions/articles/${a.id}','_blank')">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
+        <div style="font-size:14px;font-weight:600;color:var(--label);line-height:1.3;letter-spacing:-0.2px">${escape(a.title||"Untitled")}</div>
+        <div style="display:flex;flex-direction:column;align-items:end;gap:4px;flex-shrink:0">
+          <span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;font-weight:700;background:${isPublished?'var(--ok-fill)':'var(--fill-secondary)'};color:${isPublished?'var(--sys-green)':'var(--label-2)'}">${isPublished?"Published":"Draft"}</span>
+          ${isStale ? `<span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;font-weight:600;background:var(--warn-fill);color:var(--sys-orange)" title="Last updated ${updatedDays} days ago">⚠ Stale</span>` : ""}
+        </div>
+      </div>
+      ${a.description ? `<div style="font-size:12px;color:var(--label-2);line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${a.description.replace(/<[^>]+>/g," ").slice(0,180)}</div>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${tags.map(t=>`<span style="background:var(--fill-secondary);color:var(--label-2);padding:2px 8px;font-size:10.5px;border-radius:var(--r-full);border:0.5px solid var(--sep)">${escape(t)}</span>`).join("")}
+        </div>
+        ${updatedDays !== null ? `<div style="font-size:11px;color:var(--label-3)">${updatedDays === 0 ? "today" : updatedDays + "d ago"}</div>` : ""}
+      </div>
+    </div>
+  `;
 }
 
 function renderKBGrid(articles) {
@@ -5446,75 +5867,223 @@ function getBusinessImpactScore(ticket) {
 }
 
 async function renderAnalytics() {
-  if (!document.getElementById("mainAnalytics")?.classList.contains("hidden") === false) return;
-  const brandGrid = document.getElementById("brandGrid");
-  const catBreak = document.getElementById("categoryBreakdown");
-  const deflection = document.getElementById("deflectionReport");
-  const impactList = document.getElementById("impactList");
-  if (!brandGrid) return;
-
+  const host = document.getElementById("mainAnalytics");
+  if (!host) return;
   const ACTIVE = new Set([2,3,6]);
   const tickets = TICKETS.filter(t => ACTIVE.has(t.status));
+  if (!tickets.length) return;
 
-  // Resolve brands for all tickets
-  const brandCounts = {};
+  // Resolve brands
+  const brandMap = {};
   for (const t of tickets) {
-    const email = t.requester_name ? null : t.email;
-    let brand = "Unknown";
-    if (t.requester_email || email) {
-      brand = await resolveBrand(t.requester_email || email) || "Unknown";
-    } else if (t.requester_name) {
-      brand = "Unknown";
-    }
-    brandCounts[brand] = (brandCounts[brand] || 0) + 1;
+    const brand = t.requester_email ? (await resolveBrand(t.requester_email) || "Unknown") : "Unknown";
+    brandMap[brand] = (brandMap[brand] || 0) + 1;
   }
 
-  // Brand grid
-  brandGrid.innerHTML = Object.entries(brandCounts)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([brand, count]) => {
-      const color = BRAND_COLORS[brand] || "var(--accent)";
-      const pct = Math.round((count / tickets.length) * 100);
-      return `
-        <div style="background:var(--panel);border:1px solid var(--border);border-left:3px solid ${color};border-radius:var(--radius-sm);padding:10px 12px">
-          <div style="font-size:11px;font-weight:700;color:${color};margin-bottom:3px">${brand}</div>
-          <div style="font-size:22px;font-weight:800;color:var(--ink);letter-spacing:-1px">${count}</div>
-          <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">${pct}% of active</div>
-          <div style="height:3px;background:var(--border);border-radius:2px;margin-top:6px">
-            <div style="height:3px;background:${color};border-radius:2px;width:${pct}%;transition:.3s"></div>
-          </div>
+  // Category counts
+  const catMap = {};
+  tickets.forEach(t => { const c = t.category||"Uncategorized"; catMap[c]=(catMap[c]||0)+1; });
+
+  // Priority distribution
+  const prioMap = { 4:0, 3:0, 2:0, 1:0 };
+  tickets.forEach(t => prioMap[t.priority] = (prioMap[t.priority]||0)+1);
+
+  // Agent workload
+  const agentMap = {};
+  tickets.forEach(t => {
+    const a = t.responder_name || "Unassigned";
+    agentMap[a] = (agentMap[a]||0)+1;
+  });
+
+  // Ticket age buckets
+  const today=0, week=0, old=0;
+  const ageBuckets = {today:0, thisWeek:0, older:0};
+  tickets.forEach(t => {
+    const d = t.created_at ? Math.floor((Date.now()-new Date(t.created_at))/86400000) : 0;
+    if(d<=1) ageBuckets.today++;
+    else if(d<=7) ageBuckets.thisWeek++;
+    else ageBuckets.older++;
+  });
+
+  // SLA health
+  const breached = tickets.filter(t => t.due_by && new Date(t.due_by) < new Date()).length;
+  const slaHealthPct = tickets.filter(t=>t.due_by).length > 0
+    ? Math.round(((tickets.filter(t=>t.due_by).length - breached) / tickets.filter(t=>t.due_by).length) * 100)
+    : 100;
+
+  // Business impact scores
+  const scored = tickets.map(t=>({...t,score:getBusinessImpactScore(t)})).sort((a,b)=>b.score-a.score).slice(0,8);
+
+  const brandColors = {
+    "American Tin Ceilings":"#0a84ff","Baseboarders":"#30d158","Vent Covers Unlimited":"#ff9f0a",
+    "Madelyn Carter":"#bf5af2","Trueform Concrete":"#ff375f","RTA Cabinet Store":"#64d2ff",
+    "Reggio Registers":"#5e5ce6","Hearth Brands":"#ff6961","Renovation Brands":"#ffe44d","Unknown":"#636366"
+  };
+
+  const brandEntries = Object.entries(brandMap).sort((a,b)=>b[1]-a[1]);
+  const catEntries = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  const maxBrand = brandEntries[0]?.[1] || 1;
+  const maxCat = catEntries[0]?.[1] || 1;
+
+  host.innerHTML = `
+    <div style="padding:20px 24px">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:22px">
+        <div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:-0.5px">Analytics</div>
+          <div style="font-size:13px;color:var(--label-2);margin-top:4px">${tickets.length} active tickets · ${Object.keys(brandMap).length} brands · last refreshed ${new Date().toLocaleTimeString()}</div>
         </div>
-      `;
-    }).join("");
-
-  // Category breakdown
-  const catCounts = {};
-  tickets.forEach(t => { const c = t.category||"Uncategorized"; catCounts[c]=(catCounts[c]||0)+1; });
-  catBreak.innerHTML = Object.entries(catCounts).sort((a,b)=>b[1]-a[1]).map(([cat,count])=>`
-    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:12px;font-weight:500;color:var(--ink)">${cat}</span>
-      <span style="font-size:14px;font-weight:700;color:var(--accent)">${count}</span>
-    </div>
-  `).join("");
-
-  // Business impact top 10
-  const scored = tickets.map(t => ({ ...t, impactScore: getBusinessImpactScore(t) }))
-    .sort((a,b) => b.impactScore - a.impactScore).slice(0, 10);
-  impactList.innerHTML = scored.map((t,i) => `
-    <div onclick="selectTicket(${t.id});switchMode('triage')"
-      style="display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:5px;cursor:pointer;transition:.12s"
-      onmouseover="this.style.borderColor='var(--border-hot)'" onmouseout="this.style.borderColor='var(--border)'">
-      <div style="font-size:18px;font-weight:800;color:var(--ink-ghost);text-align:center">${i+1}</div>
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--ink)">${escape(t.subject)}</div>
-        <div style="font-size:11px;color:var(--ink-dim);margin-top:2px">#${t.id} · ${t.category||"—"} · ${t.requester_name||"Unknown"}</div>
+        <button class="btn ghost" onclick="renderAnalytics()">⟳ Refresh</button>
       </div>
-      <div style="text-align:right">
-        <div style="font-size:16px;font-weight:800;color:${t.impactScore>=8?"var(--danger)":t.impactScore>=5?"var(--warn)":"var(--ok)"}">${t.impactScore}</div>
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">impact</div>
+
+      <!-- Top KPI row -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:22px">
+        ${[
+          {label:"Active Tickets", val:tickets.length, color:"var(--sys-blue)", sub:"open+pending+hold"},
+          {label:"SLA Health", val:slaHealthPct+"%", color:slaHealthPct>=90?"var(--sys-green)":slaHealthPct>=70?"var(--sys-orange)":"var(--sys-red)", sub:breached+" breached"},
+          {label:"Unassigned", val:tickets.filter(t=>!t.responder_name).length, color:tickets.filter(t=>!t.responder_name).length>0?"var(--sys-orange)":"var(--sys-green)", sub:"need assignment"},
+          {label:"Urgent+High", val:tickets.filter(t=>t.priority>=3).length, color:tickets.filter(t=>t.priority>=3).length>0?"var(--sys-red)":"var(--sys-green)", sub:"priority ≥ High"},
+          {label:"Brands Affected", val:Object.keys(brandMap).filter(b=>b!=="Unknown").length, color:"var(--sys-indigo)", sub:"of 8 brands"},
+        ].map(s=>`
+          <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-lg);padding:14px">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--label-3);margin-bottom:6px">${s.label}</div>
+            <div style="font-size:28px;font-weight:700;letter-spacing:-1.5px;color:${s.color};font-variant-numeric:tabular-nums;line-height:1">${s.val}</div>
+            <div style="font-size:11px;color:var(--label-3);margin-top:4px">${s.sub}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+
+        <!-- Brand breakdown -->
+        <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-xl);padding:18px">
+          <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:14px">Tickets by Brand</div>
+          ${brandEntries.map(([brand,count])=>{
+            const color = brandColors[brand] || "var(--sys-blue)";
+            const pct = Math.round(count/tickets.length*100);
+            const barPct = Math.round(count/maxBrand*100);
+            return `
+              <div style="margin-bottom:12px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+                  <div style="display:flex;align-items:center;gap:7px">
+                    <span style="width:8px;height:8px;border-radius:2px;background:${color};display:inline-block;flex-shrink:0"></span>
+                    <span style="font-size:12.5px;font-weight:500;color:var(--label)">${brand}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:11px;color:var(--label-3)">${pct}%</span>
+                    <span style="font-size:14px;font-weight:700;color:var(--label);min-width:20px;text-align:right;font-variant-numeric:tabular-nums">${count}</span>
+                  </div>
+                </div>
+                <div style="height:4px;background:var(--fill-secondary);border-radius:var(--r-full)">
+                  <div style="height:4px;background:${color};width:${barPct}%;border-radius:var(--r-full);transition:.4s ease"></div>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+
+        <!-- Category breakdown -->
+        <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-xl);padding:18px">
+          <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:14px">Tickets by Category</div>
+          ${catEntries.map(([cat,count],i)=>{
+            const catColors = ["var(--sys-blue)","var(--sys-indigo)","var(--sys-purple)","var(--sys-teal)","var(--sys-green)","var(--sys-orange)"];
+            const color = catColors[i % catColors.length];
+            const barPct = Math.round(count/maxCat*100);
+            return `
+              <div style="margin-bottom:12px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+                  <span style="font-size:12.5px;font-weight:500;color:var(--label)">${cat}</span>
+                  <span style="font-size:14px;font-weight:700;color:var(--label);font-variant-numeric:tabular-nums">${count}</span>
+                </div>
+                <div style="height:4px;background:var(--fill-secondary);border-radius:var(--r-full)">
+                  <div style="height:4px;background:${color};width:${barPct}%;border-radius:var(--r-full);transition:.4s ease"></div>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+
+        <!-- Priority distribution donut -->
+        <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-xl);padding:18px">
+          <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:14px">Priority Mix</div>
+          ${[
+            {label:"Urgent", count:prioMap[4], color:"var(--sys-red)"},
+            {label:"High", count:prioMap[3], color:"var(--sys-orange)"},
+            {label:"Medium", count:prioMap[2], color:"var(--sys-yellow)"},
+            {label:"Low", count:prioMap[1], color:"var(--label-3)"},
+          ].map(p=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--sep)">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="width:10px;height:10px;border-radius:50%;background:${p.color}"></span>
+                <span style="font-size:12px;color:var(--label-2)">${p.label}</span>
+              </div>
+              <span style="font-size:16px;font-weight:700;color:${p.count>0?p.color:'var(--label-3)'};font-variant-numeric:tabular-nums">${p.count}</span>
+            </div>
+          `).join("")}
+        </div>
+
+        <!-- Age buckets -->
+        <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-xl);padding:18px">
+          <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:14px">Ticket Age</div>
+          ${[
+            {label:"Today (< 1d)", count:ageBuckets.today, color:"var(--sys-green)"},
+            {label:"This week (1-7d)", count:ageBuckets.thisWeek, color:"var(--sys-orange)"},
+            {label:"Older (> 7d)", count:ageBuckets.older, color:"var(--sys-red)"},
+          ].map(b=>`
+            <div style="padding:10px 0;border-bottom:0.5px solid var(--sep)">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <span style="font-size:12px;color:var(--label-2)">${b.label}</span>
+                <span style="font-size:16px;font-weight:700;color:${b.color};font-variant-numeric:tabular-nums">${b.count}</span>
+              </div>
+              <div style="height:3px;background:var(--fill-secondary);border-radius:var(--r-full)">
+                <div style="height:3px;background:${b.color};width:${tickets.length>0?Math.round(b.count/tickets.length*100):0}%;border-radius:var(--r-full)"></div>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+
+        <!-- Agent workload -->
+        <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-xl);padding:18px">
+          <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:14px">Agent Workload</div>
+          ${Object.entries(agentMap).sort((a,b)=>b[1]-a[1]).map(([agent,count])=>{
+            const initials=(agent||"?").split(" ").map(p=>p[0]||"").join("").slice(0,2).toUpperCase();
+            const agColors={"NM":"var(--sys-blue)","SM":"var(--sys-green)","EH":"var(--sys-orange)"};
+            const color=agColors[initials]||"var(--label-2)";
+            return `
+              <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid var(--sep)">
+                <span style="width:28px;height:28px;border-radius:50%;background:${color}22;color:${color};font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</span>
+                <span style="flex:1;font-size:12.5px;color:var(--label);font-weight:500">${agent}</span>
+                <span style="font-size:16px;font-weight:700;color:var(--label);font-variant-numeric:tabular-nums">${count}</span>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+
+      <!-- High impact tickets -->
+      <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-xl);padding:18px">
+        <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:14px">Highest Business Impact</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          ${scored.map((t,i)=>`
+            <div onclick="selectTicket(${t.id});switchMode('triage')"
+              style="display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);cursor:pointer;transition:.12s"
+              onmouseover="this.style.background='var(--fill-secondary)'"
+              onmouseout="this.style.background='var(--fill-quaternary)'">
+              <span style="width:24px;height:24px;display:grid;place-items:center;background:var(--fill-secondary);border-radius:50%;font-size:10px;font-weight:800;color:var(--label-2)">${i+1}</span>
+              <div style="min-width:0">
+                <div style="font-size:12.5px;font-weight:600;color:var(--label);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(t.subject)}</div>
+                <div style="font-size:11px;color:var(--label-3)">${escape(t.requester_name||"Unknown")} · ${formatAge(t.created_at)} old</div>
+              </div>
+              <span style="font-size:11px;font-weight:700;color:var(--sys-orange);font-variant-numeric:tabular-nums">${t.score}</span>
+            </div>
+          `).join("")}
+        </div>
       </div>
     </div>
-  `).join("");
+  `;
 }
 
 document.getElementById("refreshAnalyticsBtn")?.addEventListener("click", renderAnalytics);
@@ -5904,36 +6473,141 @@ function filterFleetDevices(filter) {
   _fleetPage = 0;
   renderFleetList();
 }
-function renderFleetSummary(s) {
-  const strip = document.getElementById("fleetSummaryStrip");
-  if (!strip || !s) return;
-  strip.innerHTML = [
-    { label: "Total Macs", val: s.total||0, color: "var(--accent)", sub: "managed by Kandji" },
-    { label: "FileVault", val: (s.filevaultPct||0)+"%", color: s.filevaultPct>=90?"var(--ok)":"var(--warn)", sub: "encryption enabled" },
-    { label: "Checked In", val: (s.checkedInPct||0)+"%", color: s.checkedInPct>=80?"var(--ok)":"var(--warn)", sub: "within 7 days" },
-    { label: "Stale/Missing", val: s.missingCount||0, color: s.missingCount>0?"var(--danger)":"var(--ok)", sub: "offline / not checking in" },
-    { label: "Proactive", val: "Active", color: "var(--accent)", sub: "scanning every 30min" },
-  ].map(item => `
-    <div style="background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:3px">${item.label}</div>
-      <div style="font-size:24px;font-weight:800;color:${item.color};letter-spacing:-1px;line-height:1">${item.val}</div>
-      <div style="font-size:10px;color:var(--ink-ghost);margin-top:2px">${item.sub}</div>
-    </div>
-  `).join("");
+
+let _fleetSelection = new Set();
+
+function clearFleetSelection() {
+  _fleetSelection.clear();
+  document.querySelectorAll(".fleet-row-check.checked").forEach(el => el.classList.remove("checked"));
+  updateFleetBulkBar();
 }
 
-function renderFleetOsChart(osVersions) {
-  const el = document.getElementById("fleetOsChart");
-  if (!el || !osVersions.length) return;
-  el.innerHTML = osVersions.map(o => `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <div style="font-size:12px;color:var(--ink);min-width:100px;font-weight:500">${o.version}</div>
-      <div style="flex:1;height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden">
-        <div style="height:100%;background:var(--accent);width:${o.pct}%;border-radius:4px;transition:.3s"></div>
+function updateFleetBulkBar() {
+  const bar = document.getElementById("fleetBulkBar");
+  const cnt = document.getElementById("fleetBulkCount");
+  if (bar) bar.style.display = _fleetSelection.size > 0 ? "flex" : "none";
+  if (cnt) cnt.textContent = `${_fleetSelection.size} selected`;
+}
+
+async function bulkFleetAction(action) {
+  if (!_fleetSelection.size) return;
+  const ids = [..._fleetSelection];
+  toast(`Sending ${action} to ${ids.length} devices…`, "info");
+  let ok = 0, fail = 0;
+  for (const deviceId of ids) {
+    try {
+      const res = await fetch("/api/kandji", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({action, device_id:deviceId}) });
+      if (res.ok) ok++; else fail++;
+    } catch(e) { fail++; }
+  }
+  toast(`✓ ${ok} sent${fail?`, ${fail} failed`:""}`);
+  clearFleetSelection();
+}
+
+function renderFleetSummary(s) {
+  const strip = document.getElementById("fleetSummaryStrip");
+  const insights = document.getElementById("fleetInsights");
+  if (!s) return;
+
+  if (strip) {
+    strip.innerHTML = [
+      { label:"Total Devices", val:s.total||0, color:"var(--sys-blue)", sub:"managed by Kandji" },
+      { label:"FileVault", val:(s.filevaultPct||0)+"%", color:s.filevaultPct>=95?"var(--sys-green)":s.filevaultPct>=80?"var(--sys-orange)":"var(--sys-red)", sub:"encryption enabled" },
+      { label:"Check-in Rate", val:(s.checkedInPct||0)+"%", color:s.checkedInPct>=90?"var(--sys-green)":s.checkedInPct>=70?"var(--sys-orange)":"var(--sys-red)", sub:"within 7 days" },
+      { label:"Stale / Missing", val:s.missingCount||0, color:s.missingCount>0?"var(--sys-red)":"var(--sys-green)", sub:"not checking in" },
+      { label:"Proactive Scan", val:"Active", color:"var(--sys-blue)", sub:"every 30 minutes" },
+    ].map(item=>`
+      <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-lg);padding:12px 14px">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--label-3);margin-bottom:4px">${item.label}</div>
+        <div style="font-size:26px;font-weight:700;color:${item.color};letter-spacing:-1.5px;line-height:1;font-variant-numeric:tabular-nums">${item.val}</div>
+        <div style="font-size:10.5px;color:var(--label-3);margin-top:3px">${item.sub}</div>
       </div>
-      <div style="font-size:11px;color:var(--ink-dim);min-width:40px;text-align:right">${o.count} (${o.pct}%)</div>
-    </div>
-  `).join("");
+    `).join("");
+  }
+
+  if (insights && _fleetData) {
+    const devices = _fleetData.devices || [];
+
+    // OS version distribution
+    const osMap = {};
+    devices.forEach(d => {
+      const v = d.os_version || "Unknown";
+      const major = v.split(".").slice(0,2).join(".");
+      osMap[major] = (osMap[major]||0)+1;
+    });
+    const osEntries = Object.entries(osMap).sort((a,b)=>b[1]-a[1]);
+    const maxOs = osEntries[0]?.[1] || 1;
+
+    // FileVault breakdown
+    const fvOn = devices.filter(d=>d.filevault_enabled).length;
+    const fvOff = devices.length - fvOn;
+    const fvPct = devices.length ? Math.round(fvOn/devices.length*100) : 0;
+
+    // Stale devices list
+    const staleDevices = devices.filter(d=>(d._compliance?.daysSinceCheckIn||0)>=7).slice(0,3);
+
+    insights.innerHTML = `
+      <!-- OS Version Distribution -->
+      <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-xl);padding:18px">
+        <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:14px">macOS Distribution</div>
+        ${osEntries.slice(0,6).map(([version,count])=>{
+          const barPct = Math.round(count/maxOs*100);
+          const isLatest = osEntries[0]?.[0] === version;
+          return `
+            <div style="margin-bottom:11px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span style="font-size:12.5px;font-weight:500;color:var(--label)">${version}</span>
+                  ${isLatest?`<span style="font-size:9px;font-weight:700;background:rgba(48,209,88,0.12);color:var(--sys-green);padding:1px 6px;border-radius:var(--r-full)">LATEST</span>`:""}
+                </div>
+                <span style="font-size:12px;color:var(--label-2);font-variant-numeric:tabular-nums">${count}</span>
+              </div>
+              <div style="height:4px;background:var(--fill-secondary);border-radius:var(--r-full)">
+                <div style="height:4px;background:${isLatest?"var(--sys-green)":"var(--sys-blue)"};width:${barPct}%;border-radius:var(--r-full);transition:.4s"></div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      <!-- FileVault + Stale alerts -->
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <!-- FileVault compliance -->
+        <div style="background:var(--surface-1);border:0.5px solid ${fvPct<90?'rgba(255,69,58,0.3)':'var(--sep)'};border-radius:var(--r-xl);padding:16px;flex:1">
+          <div style="font-size:14px;font-weight:600;letter-spacing:-0.2px;margin-bottom:10px">FileVault Compliance</div>
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+            <div style="text-align:center">
+              <div style="font-size:32px;font-weight:800;color:${fvPct>=95?"var(--sys-green)":fvPct>=80?"var(--sys-orange)":"var(--sys-red)"};letter-spacing:-2px;font-variant-numeric:tabular-nums;line-height:1">${fvPct}%</div>
+              <div style="font-size:10.5px;color:var(--label-3);margin-top:3px">encrypted</div>
+            </div>
+            <div style="flex:1">
+              <div style="height:8px;background:var(--fill-secondary);border-radius:var(--r-full);overflow:hidden;margin-bottom:8px">
+                <div style="height:8px;background:${fvPct>=95?"var(--sys-green)":fvPct>=80?"var(--sys-orange)":"var(--sys-red)"};width:${fvPct}%;border-radius:var(--r-full);transition:.4s"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--label-2)">
+                <span>🔒 ${fvOn} encrypted</span>
+                <span style="color:${fvOff>0?"var(--sys-red)":"var(--label-3)"}">🔓 ${fvOff} unencrypted</span>
+              </div>
+            </div>
+          </div>
+          ${fvOff > 0 ? `<button class="btn" style="width:100%;justify-content:center;font-size:12px;color:var(--sys-red);border-color:rgba(255,69,58,0.3)" onclick="setFleetFilter('filevault',document.querySelector('[data-filter=filevault]'))">View ${fvOff} unencrypted device${fvOff>1?"s":""}</button>` : `<div style="text-align:center;font-size:12px;color:var(--sys-green);font-weight:600">✓ All devices encrypted</div>`}
+        </div>
+
+        <!-- Stale devices alert -->
+        ${staleDevices.length ? `
+        <div style="background:rgba(255,159,10,0.06);border:0.5px solid rgba(255,159,10,0.3);border-radius:var(--r-xl);padding:14px">
+          <div style="font-size:13px;font-weight:600;color:var(--sys-orange);margin-bottom:8px">⚠ ${devices.filter(d=>(d._compliance?.daysSinceCheckIn||0)>=7).length} Stale Devices</div>
+          ${staleDevices.map(d=>`
+            <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid rgba(255,159,10,0.15)">
+              <span style="color:var(--label-2)">${d.device_name||"Unknown"}</span>
+              <span style="color:var(--sys-orange)">${d._compliance?.daysSinceCheckIn||"?"}d ago</span>
+            </div>
+          `).join("")}
+          <button class="btn" style="margin-top:8px;width:100%;justify-content:center;font-size:12px" onclick="setFleetFilter('stale',document.querySelector('[data-filter=stale]'))">View all stale</button>
+        </div>` : ""}
+      </div>
+    `;
+  }
 }
 
 async function showMacDeviceDetail(device) {
