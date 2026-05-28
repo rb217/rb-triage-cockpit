@@ -1,4 +1,4 @@
-// api/shared/clients.js — reads secrets from env vars (no Key Vault)
+// api/shared/clients.js
 
 const FS_DOMAIN = process.env.FRESHSERVICE_DOMAIN;
 
@@ -19,12 +19,7 @@ function getSecret(name) {
 function getPrincipal(req) {
   const header = req.headers && (req.headers["x-ms-client-principal"] || req.headers.get?.("x-ms-client-principal"));
   if (!header) return null;
-  try {
-    const decoded = Buffer.from(header, "base64").toString("utf-8");
-    return JSON.parse(decoded);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(Buffer.from(header, "base64").toString("utf-8")); } catch { return null; }
 }
 
 function isInItTeam(principal) {
@@ -39,26 +34,18 @@ async function fsRequest(path, options = {}) {
   const url = `https://${FS_DOMAIN}/api/v2${path}`;
   const res = await fetch(url, {
     method: options.method || "GET",
-    headers: {
-      "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
+    headers: { "Authorization": `Basic ${auth}`, "Content-Type": "application/json", ...(options.headers || {}) },
     body: options.body
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Freshservice ${res.status}: ${text.slice(0, 300)}`);
-  }
+  if (!res.ok) { const text = await res.text(); throw new Error(`Freshservice ${res.status}: ${text.slice(0, 300)}`); }
   return res.json();
 }
 
 async function fsGetAllOpenTickets() {
-  // Fetch all tickets then filter to open statuses (2=Open, 3=Pending, 6=Hold)
-  // include=requester brings back requester email and name
+  // /tickets/filter returns 403 on Growth plan — use /tickets with client-side status filter
   const data = await fsRequest(`/tickets?per_page=100&include=requester&order_type=desc&order_by=created_at`);
   const all = data.tickets || [];
-  // Filter to only active/open statuses — exclude Resolved(4) and Closed(5)
+  // Status: 2=Open, 3=Pending, 6=Hold — exclude 4=Resolved, 5=Closed
   return all.filter(t => t.status === 2 || t.status === 3 || t.status === 6);
 }
 
@@ -79,8 +66,8 @@ async function fsReplyToTicket(id, body) {
   return fsRequest(`/tickets/${id}/reply`, { method: "POST", body: JSON.stringify({ body }) });
 }
 
-async function fsGetClosedTickets(limit = 200) {
-  const data = await fsRequest(`/tickets?per_page=${Math.min(limit, 100)}&order_type=desc&order_by=updated_at&include=requester`);
+async function fsGetClosedTickets(limit = 100) {
+  const data = await fsRequest(`/tickets?per_page=100&order_type=desc&order_by=updated_at&include=requester`);
   return (data.tickets || []).filter(t => t.status === 4 || t.status === 5).slice(0, limit);
 }
 
