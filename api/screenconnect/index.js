@@ -1,8 +1,9 @@
 const { getPrincipal, isInItTeam, fsAddNote } = require("../shared/clients");
 
 // ConnectWise Control — RESTful API Manager extension
-// Uses CTRLAuthHeader + Origin headers (NOT Basic auth)
-// Endpoint: /App_Extensions/{guid}/Service.ashx/{method}
+// GET methods: GetSessionsByName, GetSessionDetailsBySessionID, GetSessionBySessionID
+// POST methods: UpdateSessionCustomProperties, SendCommandToSession
+// Auth: CTRLAuthHeader + Origin
 
 const SC_BASE   = () => (process.env.SCREENCONNECT_URL || "").replace(/\/$/, "");
 const SC_GUID   = () => process.env.SCREENCONNECT_EXTENSION_GUID || "";
@@ -21,38 +22,53 @@ function extHeaders() {
   };
 }
 
-// All extension calls are POST (even reads — SC extension requires POST)
-async function extCall(method, body = []) {
+// GET with body — SC extension uses GET for reads but still accepts body params
+async function extGet(method, bodyParams = []) {
   const url = extUrl(method);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: extHeaders(),
-    body: JSON.stringify(body)
+  const headers = extHeaders();
+
+  // Try GET first (per docs), fall back to POST if needed
+  let res = await fetch(url, {
+    method: "GET",
+    headers,
+    body: bodyParams.length ? JSON.stringify(bodyParams) : undefined
   });
-  if (res.status === 401) throw new Error("Auth failed — check SCREENCONNECT_SECRET (CTRLAuthHeader token)");
-  if (res.status === 403) throw new Error("Forbidden — token may be wrong or Origin header mismatch");
-  if (!res.ok) throw new Error(`SC extension ${res.status}: ${(await res.text()).slice(0, 200)}`);
+
+  // Some SC versions reject GET with body — retry as POST
+  if (!res.ok && res.status === 500) {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(bodyParams)
+    });
+  }
+
+  if (res.status === 401) throw new Error("Auth failed — check SCREENCONNECT_SECRET");
+  if (res.status === 403) throw new Error("Forbidden — check SCREENCONNECT_ORIGIN matches your SC instance URL");
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`SC ${res.status}: ${text.slice(0, 300)}`);
+  }
+
   const text = await res.text();
   try { return JSON.parse(text); } catch(e) { return text; }
 }
 
 function normalizeSession(s) {
-  // Extension returns arrays: [SessionID, Name, IsPublic, Code, GuestMachineInfo, ConnectedCount, ...]
   if (Array.isArray(s)) {
+    // Array format: [SessionID, Name, IsPublic, Code, GuestMachineInfo, ConnectedCount, ...]
     const id = s[0];
-    const name = s[1] || "Unknown";
-    const connCount = typeof s[5] === "number" ? s[5] : (s[5] || 0);
+    const guestInfo = s[4] || {};
     return {
       sessionId: id,
-      name,
-      isActive: connCount > 0,
-      activeConnections: connCount,
-      guestMachineName: s[4]?.MachineName || s[4]?.GuestMachineName || "",
-      guestOs: s[4]?.OperatingSystemName || "",
+      name: s[1] || "Unknown",
+      isActive: (s[5] || 0) > 0,
+      activeConnections: s[5] || 0,
+      guestMachineName: guestInfo.MachineName || guestInfo.GuestMachineName || s[2] || "",
+      guestOs: guestInfo.OperatingSystemName || "",
       launchUrl: id ? `${SC_BASE()}/Host#Access/${id}` : null
     };
   }
-  // Object format (some SC versions)
   const id = s.SessionID || s.sessionId;
   return {
     sessionId: id,
@@ -66,9 +82,9 @@ function normalizeSession(s) {
 }
 
 async function findSessionsByName(query) {
-  // GetSessionsByName takes [sessionType, sessionGroupPath, name, maxResults]
-  // sessionType 2 = Access sessions
-  const result = await extCall("GetSessionsByName", [2, "", query, 20]);
+  // GetSessionsByName params: [sessionType, sessionGroupPath, nameFilter, maxResults]
+  // sessionType: 0=Support, 1=Meeting, 2=Access — we want Access (2)
+  const result = await extGet("GetSessionsByName", [2, "", query, 25]);
   const sessions = Array.isArray(result) ? result : (result.Sessions || result.sessions || []);
   return sessions.map(normalizeSession);
 }
@@ -81,9 +97,8 @@ module.exports = async function(context, req) {
   }
 
   const base = SC_BASE(), guid = SC_GUID(), secret = SC_SECRET();
-
   if (!base || !guid || !secret) {
-    context.res = { status: 500, body: { error: "ScreenConnect not configured — need SCREENCONNECT_URL, SCREENCONNECT_EXTENSION_GUID, SCREENCONNECT_SECRET" } };
+    context.res = { status: 500, body: { error: "SC not configured — need SCREENCONNECT_URL, SCREENCONNECT_EXTENSION_GUID, SCREENCONNECT_SECRET" } };
     return;
   }
 
@@ -103,14 +118,13 @@ module.exports = async function(context, req) {
     const { action, name } = req.query;
 
     if (action === "status") {
-      // Diagnostic — try a minimal extension call
+      // Diagnostic — use GetSessionsByName with empty string to list recent sessions
       const tests = {};
       try {
-        // GetSessionGroups is a lightweight call to test auth
-        const r = await extCall("GetSessionGroups", [2]);
-        tests.extension = { ok: true, sample: JSON.stringify(r).slice(0, 200) };
+        const r = await extGet("GetSessionsByName", [2, "", "", 5]);
+        tests.GetSessionsByName = { ok: true, count: Array.isArray(r) ? r.length : "non-array", sample: JSON.stringify(r).slice(0, 300) };
       } catch(e) {
-        tests.extension = { ok: false, error: e.message };
+        tests.GetSessionsByName = { ok: false, error: e.message };
       }
       context.res = { body: {
         configured: true,
@@ -127,22 +141,30 @@ module.exports = async function(context, req) {
     if (action === "find" && name) {
       let sessions = await findSessionsByName(name);
 
-      // If no results and name looks like a serial (alphanumeric, 10-12 chars),
-      // also try searching by the name directly as a fallback
-      if (!sessions.length && name.length > 4) {
+      // Also try device name fallback if serial returns nothing
+      if (!sessions.length && name.length > 6) {
         try {
-          // Try partial match — some SC versions need just part of the name
-          const shortName = name.slice(0, 8);
-          const fallback = await findSessionsByName(shortName);
-          if (fallback.length) sessions = fallback;
-        } catch(e) { /* ignore fallback error */ }
+          const short = name.slice(0, 8);
+          if (short !== name) {
+            const fallback = await findSessionsByName(short);
+            if (fallback.length) sessions = fallback;
+          }
+        } catch(e) { /* ignore */ }
       }
 
       context.res = { body: { sessions } };
       return;
     }
 
-    context.res = { status: 400, body: { error: "Unknown action or missing params" } };
+    if (action === "active") {
+      // All access sessions (empty name filter = all)
+      const sessions = await findSessionsByName("");
+      const active = sessions.filter(s => s.isActive);
+      context.res = { body: { sessions: active } };
+      return;
+    }
+
+    context.res = { status: 400, body: { error: "Unknown action" } };
 
   } catch(err) {
     context.log.error("screenconnect failed", err);
