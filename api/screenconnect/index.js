@@ -23,7 +23,7 @@ function extHeaders() {
 }
 
 // GET with body — SC extension uses GET for reads but still accepts body params
-async function extGet(method, bodyParams = []) {
+async function extCall(method, bodyParams = []) {
   const url = extUrl(method);
   const res = await fetch(url, {
     method: "POST",
@@ -72,7 +72,7 @@ function normalizeSession(s) {
 async function findSessionsByName(query) {
   // GetSessionsByName params: [sessionType, sessionGroupPath, nameFilter, maxResults]
   // sessionType: 0=Support, 1=Meeting, 2=Access — we want Access (2)
-  const result = await extGet("GetSessionsByName", [2, "", query, 25]);
+  const result = await extCall("GetSessionsByName", [2, "", query, 25]);
   const sessions = Array.isArray(result) ? result : (result.Sessions || result.sessions || []);
   return sessions.map(normalizeSession);
 }
@@ -106,22 +106,27 @@ module.exports = async function(context, req) {
     const { action, name } = req.query;
 
     if (action === "status") {
-      // Diagnostic — use GetSessionsByName with empty string to list recent sessions
       const tests = {};
-      try {
-        const r = await extGet("GetSessionsByName", [2, "", "", 5]);
-        tests.GetSessionsByName = { ok: true, count: Array.isArray(r) ? r.length : "non-array", sample: JSON.stringify(r).slice(0, 300) };
-      } catch(e) {
-        tests.GetSessionsByName = { ok: false, error: e.message };
+      // Try different param combinations — SC version determines which works
+      const combos = [
+        { label: "name_only",           params: [""] },
+        { label: "type_name",           params: [2, ""] },
+        { label: "type_group_name",     params: [2, "", ""] },
+        { label: "type_group_name_max", params: [2, "", "", 5] },
+      ];
+      for (const c of combos) {
+        try {
+          const r = await extCall("GetSessionsByName", c.params);
+          tests[c.label] = { ok: true, count: Array.isArray(r) ? r.length : "non-array", sample: JSON.stringify(r).slice(0, 200) };
+          break; // stop at first success
+        } catch(e) {
+          tests[c.label] = { ok: false, error: e.message.slice(0, 120) };
+        }
       }
       context.res = { body: {
-        configured: true,
-        hasGuid: !!guid,
-        hasSecret: !!secret,
+        configured: true, hasGuid: !!guid, hasSecret: !!secret,
         url: base.replace(/https?:\/\//, "").split("/")[0],
-        origin: SC_ORIGIN(),
-        extensionUrl: extUrl("GetSessionsByName"),
-        tests
+        origin: SC_ORIGIN(), extensionUrl: extUrl("GetSessionsByName"), tests
       }};
       return;
     }
