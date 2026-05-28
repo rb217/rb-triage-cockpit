@@ -5782,37 +5782,47 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
   const host = document.getElementById(`scCtx_${ticketId}`);
   if (!host) return;
 
-  // SC session names use just the hostname (e.g. "TF-4QL95M3" not "WORKGROUP\TF-4QL95M3")
-  // Strip any domain/workgroup prefix and use the bare hostname
-  const stripPrefix = (name) => name ? name.replace(/^[^\\]+\\/, "").trim() : name;
-  const hostname = stripPrefix(deviceName) || stripPrefix(serial);
-  const searchName = hostname || deviceName || serial;
+  // SC Access sessions are named by the USER's display name (e.g. "Judy McCloskey")
+  // NOT by hostname or serial. Get requester name from ticket.
+  const ticket = window._tickets?.find(x => x.id === ticketId);
+  const requesterName = ticket?.requester_name || "";
+  const hostname = (deviceName || "").replace(/^[^\\]+\\/, "").trim();
 
-  host.innerHTML = `<div style="font-size:12px;color:var(--ink-dim)"><div class="loader" style="display:inline-block;margin-right:6px"></div>Searching for ${searchName}…</div>`;
+  host.innerHTML = `<div style="font-size:12px;color:var(--ink-dim)"><div class="loader" style="display:inline-block;margin-right:6px"></div>Searching ScreenConnect…</div>`;
 
   try {
     let sessions = [];
 
-    // Search by hostname (primary)
-    if (hostname) {
+    // 1. Search by requester full name (primary — SC names sessions by user)
+    if (requesterName) {
+      const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(requesterName)}`);
+      if (res.ok) sessions = (await res.json()).sessions || [];
+    }
+
+    // 2. Try first name only if full name gets nothing
+    if (!sessions.length && requesterName) {
+      const firstName = requesterName.split(" ")[0];
+      if (firstName && firstName !== requesterName) {
+        const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(firstName)}`);
+        if (res.ok) sessions = (await res.json()).sessions || [];
+      }
+    }
+
+    // 3. Fall back to hostname
+    if (!sessions.length && hostname) {
       const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(hostname)}`);
       if (res.ok) sessions = (await res.json()).sessions || [];
     }
 
-    // Also try full device name if different
-    if (!sessions.length && deviceName && stripPrefix(deviceName) !== deviceName) {
-      const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(deviceName)}`);
-      if (res.ok) sessions = (await res.json()).sessions || [];
-    }
-
-    // Fall back to serial
+    // 4. Fall back to serial
     if (!sessions.length && serial && serial !== hostname) {
       const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(serial)}`);
       if (res.ok) sessions = (await res.json()).sessions || [];
     }
 
     if (!sessions.length) {
-      host.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No ScreenConnect session found for <strong>${searchName}</strong> — device may not have the SC agent installed</div>`;
+      const searched = [requesterName, hostname, serial].filter(Boolean).join(", ");
+      host.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No SC session found (searched: ${searched})</div>`;
       return;
     }
 
@@ -6088,16 +6098,17 @@ async function loadIntuneComplianceDetails(deviceId, ticketId) {
 
 async function runIntuneAction(action, deviceId, deviceName) {
   const labels = { sync: "Sync", retire: "Retire", wipe: "Wipe" };
-  toast(`Sending Intune command: ${labels[action]}…`, "info");
+  toast(`Sending ${labels[action]} command to ${deviceName}…`, "info");
   try {
     const res = await fetch("/api/intune", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, deviceId })
     });
-    const data = await res.json();
-    if (data.ok) toast(`✓ ${data.message || labels[action] + " command sent to " + deviceName}`);
-    else toast(`✗ Intune command failed: ${data.error||"unknown"}`, "error");
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : { ok: true };
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    toast(`✓ ${labels[action]} command sent to ${deviceName}`);
   } catch(e) {
     toast(`✗ Intune error: ${e.message}`, "error");
   }
