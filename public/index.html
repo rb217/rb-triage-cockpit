@@ -1802,9 +1802,11 @@ function renderTicketCard(t){
 }
 
 function selectTicket(id){
+  const alreadySelected = CURRENT_ID === id;
   CURRENT_ID = id;
   renderList();
-  renderDetail();
+  // Only fully re-render detail if switching to a different ticket
+  if (!alreadySelected) renderDetail();
   const t = TICKETS.find(x=>x.id===id);
   // lazy-load similar tickets for this one
   if(!SIMILAR.has(id) && CLOSED_TICKETS.length){
@@ -1827,9 +1829,8 @@ function selectTicket(id){
   if (t && t.category === "Network") {
     setTimeout(() => loadMerakiTicketContext(id, t), 300);
   }
-  // load Kandji device context for all tickets (also triggers SC via serial)
+  // load device contexts — guards prevent re-running if already loaded
   if (t) setTimeout(() => loadKandjiTicketContext(id, t), 400);
-  // load Intune device context + ScreenConnect for Windows users
   if (t) setTimeout(() => loadIntuneAndSCContext(id, t), 500);
 }
 
