@@ -2,95 +2,96 @@ const { getPrincipal, isInItTeam, fsAddNote } = require("../shared/clients");
 
 // ConnectWise Control (ScreenConnect) API
 // GET /api/screenconnect?action=find&name=... — find sessions by machine name/serial
-// GET /api/screenconnect?action=active        — all active sessions
-// POST { action:"note", ticketId, ... }       — add session note to ticket
+// GET /api/screenconnect?action=status        — diagnostic
+// POST { action:"note", ... }                 — add session note
 
 const SC_BASE = () => (process.env.SCREENCONNECT_URL || "").replace(/\/$/, "");
 const SC_USER = () => process.env.SCREENCONNECT_USER || "";
 const SC_PASS = () => process.env.SCREENCONNECT_SECRET || "";
-const SC_GUID = () => process.env.SCREENCONNECT_EXTENSION_GUID || "";
 
-function getAuthHeader() {
-  const user = SC_USER();
-  const pass = SC_PASS();
-  if (!user || !pass) return null;
-  return "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
+function getBasicAuth() {
+  const u = SC_USER(), p = SC_PASS();
+  if (!u || !p) return null;
+  return "Basic " + Buffer.from(`${u}:${p}`).toString("base64");
 }
 
-async function scGet(path) {
+// Try multiple SC API strategies and return first that works
+async function findSessions(query) {
   const base = SC_BASE();
-  if (!base) throw new Error("SCREENCONNECT_URL not configured");
-
-  const auth = getAuthHeader();
-  const headers = { "Content-Type": "application/json" };
+  const auth = getBasicAuth();
+  const headers = { "Content-Type": "application/json", "Accept": "application/json" };
   if (auth) headers["Authorization"] = auth;
 
-  const res = await fetch(`${base}${path}`, { headers });
-  if (res.status === 401) throw new Error("ScreenConnect auth failed — check SCREENCONNECT_USER and SCREENCONNECT_SECRET");
-  if (!res.ok) throw new Error(`ScreenConnect ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const text = await res.text();
-  try { return JSON.parse(text); } catch(e) { return text; }
-}
+  const errors = [];
 
-// ConnectWise Control REST API v1
-async function findSessions(query) {
+  // Strategy 1: REST API with filter
   try {
-    // Try REST API first
-    const encoded = encodeURIComponent(query);
-    const data = await scGet(`/api/Sessions?filter=Name+CONTAINS+'${encoded}'+OR+CustomProperty0+CONTAINS+'${encoded}'&type=Access&limit=20`);
-    if (Array.isArray(data)) return data.map(normalizeSession);
-    if (data?.Sessions) return data.Sessions.map(normalizeSession);
-  } catch(e1) {
-    // Fall back to report API
-    try {
-      const data = await scGet(`/Report2.json?SessionType=Access&GroupBy=&Context=&Filter=Name+CONTAINS+'${encodeURIComponent(query)}'&Columns=SessionID,Name,GuestMachineName,GuestConnectedCount,ActiveSessionCount&StartIndex=0&ItemCount=20`);
-      if (data?.Rows) return data.Rows.map(normalizeReportRow);
-    } catch(e2) {
-      throw new Error(`SC find failed: ${e1.message}`);
+    const url = `${base}/api/Sessions?SessionType=Access&filter=${encodeURIComponent(`Name CONTAINS '${query}'`)}&fields=SessionID,Name,GuestMachineName,GuestConnectedCount,ActiveConnectionCount,LastConnectedTime,GuestOperatingSystemName`;
+    const res = await fetch(url, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      const sessions = Array.isArray(data) ? data : (data.Sessions || data.sessions || []);
+      return sessions.map(s => normalizeRest(s));
     }
-  }
-  return [];
+    errors.push(`REST: ${res.status} ${await res.text().then(t=>t.slice(0,100))}`);
+  } catch(e) { errors.push(`REST: ${e.message}`); }
+
+  // Strategy 2: Report2 API (older SC versions)
+  try {
+    const url = `${base}/Report2.json?SessionType=Access&GroupBy=&Context=&Filter=${encodeURIComponent(`Name CONTAINS '${query}'`)}&Columns=SessionID,Name,GuestMachineName,ActiveConnectionCount,GuestConnectedCount,LastConnectedTime&StartIndex=0&ItemCount=20`;
+    const res = await fetch(url, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.Rows || data.rows) {
+        const rows = data.Rows || data.rows;
+        return rows.map(r => normalizeReport(r));
+      }
+    }
+    errors.push(`Report2: ${res.status}`);
+  } catch(e) { errors.push(`Report2: ${e.message}`); }
+
+  // Strategy 3: ServiceSubtype filter
+  try {
+    const url = `${base}/api/Sessions?SessionType=Access&nameFilter=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      const sessions = Array.isArray(data) ? data : (data.Sessions || []);
+      return sessions.map(s => normalizeRest(s));
+    }
+    errors.push(`nameFilter: ${res.status}`);
+  } catch(e) { errors.push(`nameFilter: ${e.message}`); }
+
+  throw new Error(`All strategies failed: ${errors.join(" | ")}`);
 }
 
-function normalizeSession(s) {
-  // Handle both REST and report formats
-  if (Array.isArray(s)) {
-    return {
-      sessionId: s[0],
-      name: s[1] || s[2] || "Unknown",
-      isActive: (s[4] || 0) > 0 || (s[3] || 0) > 0,
-      activeConnections: s[4] || 0,
-      launchUrl: buildLaunchUrl(s[0])
-    };
-  }
+function normalizeRest(s) {
+  const id = s.SessionID || s.sessionId || s.Id || s.id;
   return {
-    sessionId: s.SessionID || s.sessionId || s.Id,
-    name: s.Name || s.GuestMachineName || "Unknown",
-    isActive: (s.ActiveConnectionCount || s.GuestConnectedCount || 0) > 0,
-    activeConnections: s.ActiveConnectionCount || s.GuestConnectedCount || 0,
-    guestMachineName: s.GuestMachineName,
-    guestOs: s.GuestOperatingSystemName,
-    lastConnected: s.LastConnectedTime,
-    launchUrl: buildLaunchUrl(s.SessionID || s.sessionId || s.Id)
+    sessionId: id,
+    name: s.Name || s.GuestMachineName || s.name || "Unknown",
+    guestMachineName: s.GuestMachineName || s.guestMachineName,
+    guestOs: s.GuestOperatingSystemName || s.guestOperatingSystemName,
+    isActive: ((s.ActiveConnectionCount || s.activeConnectionCount || 0) > 0) ||
+              ((s.GuestConnectedCount || s.guestConnectedCount || 0) > 0),
+    activeConnections: s.ActiveConnectionCount || s.activeConnectionCount || 0,
+    lastConnected: s.LastConnectedTime || s.lastConnectedTime,
+    launchUrl: id ? `${SC_BASE()}/Host#Access/${id}` : null
   };
 }
 
-function normalizeReportRow(row) {
+function normalizeReport(row) {
+  // Report rows are arrays: [SessionID, Name, GuestMachineName, ActiveConnectionCount, GuestConnectedCount, LastConnectedTime]
+  const id = row[0];
   return {
-    sessionId: row[0],
-    name: row[1] || "Unknown",
+    sessionId: id,
+    name: row[1] || row[2] || "Unknown",
     guestMachineName: row[2],
     isActive: (row[3] || 0) > 0 || (row[4] || 0) > 0,
-    activeConnections: row[4] || 0,
-    launchUrl: buildLaunchUrl(row[0])
+    activeConnections: row[3] || 0,
+    lastConnected: row[5],
+    launchUrl: id ? `${SC_BASE()}/Host#Access/${id}` : null
   };
-}
-
-function buildLaunchUrl(sessionId) {
-  if (!sessionId) return null;
-  const base = SC_BASE();
-  if (!base) return null;
-  return `${base}/Host#Access/${sessionId}`;
 }
 
 module.exports = async function(context, req) {
@@ -100,47 +101,83 @@ module.exports = async function(context, req) {
     return;
   }
 
+  const base = SC_BASE();
+  if (!base) {
+    context.res = { status: 500, body: { error: "SCREENCONNECT_URL not configured" } };
+    return;
+  }
+
   try {
     if (req.method === "POST") {
       const { action, ticketId, sessionId, summary, agentName, duration } = req.body || {};
       if (action === "note" && ticketId) {
-        const note = `[🖥️ ScreenConnect Session]\nAgent: ${agentName || "IT Team"}\nDuration: ${duration || "—"}\n${summary ? "Notes: " + summary : ""}\nSession ID: ${sessionId || "—"}`;
+        const note = `[🖥️ ScreenConnect Session]\nAgent: ${agentName||"IT Team"}\nDuration: ${duration||"—"}\n${summary?"Notes: "+summary:""}\nSession: ${sessionId||"—"}`;
         await fsAddNote(ticketId, note, true);
         context.res = { body: { ok: true } };
       } else {
-        context.res = { status: 400, body: { error: "Unknown action" } };
+        context.res = { status: 400, body: { error: "Unknown POST action" } };
       }
       return;
     }
 
     const { action, name } = req.query;
 
+    if (action === "status") {
+      // Diagnostic — test auth against each known endpoint
+      const auth = getBasicAuth();
+      const headers = { "Accept": "application/json" };
+      if (auth) headers["Authorization"] = auth;
+
+      const tests = {};
+
+      // Test /api/Sessions
+      try {
+        const r = await fetch(`${base}/api/Sessions?SessionType=Access&ItemCount=1`, { headers });
+        tests.restApi = { status: r.status, ok: r.ok };
+        if (r.ok) { const t = await r.text(); tests.restApiSample = t.slice(0, 200); }
+      } catch(e) { tests.restApi = { error: e.message }; }
+
+      // Test /Report2.json
+      try {
+        const r = await fetch(`${base}/Report2.json?SessionType=Access&ItemCount=1`, { headers });
+        tests.report2 = { status: r.status, ok: r.ok };
+        if (r.ok) { const t = await r.text(); tests.report2Sample = t.slice(0, 200); }
+      } catch(e) { tests.report2 = { error: e.message }; }
+
+      context.res = { body: {
+        configured: true,
+        hasUser: !!SC_USER(),
+        hasPass: !!SC_PASS(),
+        url: base.replace(/https?:\/\//, "").split("/")[0],
+        tests
+      }};
+      return;
+    }
+
     if (action === "find" && name) {
       const sessions = await findSessions(name);
       context.res = { body: { sessions } };
+      return;
+    }
 
-    } else if (action === "active") {
+    if (action === "active") {
+      const auth = getBasicAuth();
+      const headers = { "Accept": "application/json" };
+      if (auth) headers["Authorization"] = auth;
       try {
-        const data = await scGet("/api/Sessions?filter=ActiveConnectionCount+GT+0&type=Access&limit=50");
-        const sessions = Array.isArray(data) ? data.map(normalizeSession) :
-                         data?.Sessions ? data.Sessions.map(normalizeSession) : [];
+        const r = await fetch(`${base}/api/Sessions?SessionType=Access&filter=${encodeURIComponent("ActiveConnectionCount GT 0")}&ItemCount=50`, { headers });
+        if (!r.ok) throw new Error(`${r.status}`);
+        const data = await r.json();
+        const sessions = Array.isArray(data) ? data.map(normalizeRest) : (data.Sessions||[]).map(normalizeRest);
         context.res = { body: { sessions } };
       } catch(e) {
         context.res = { body: { sessions: [], error: e.message } };
       }
-
-    } else if (action === "status") {
-      const base = SC_BASE();
-      context.res = { body: {
-        configured: !!base,
-        hasAuth: !!(SC_USER() && SC_PASS()),
-        hasGuid: !!SC_GUID(),
-        url: base ? base.replace(/https?:\/\//, "").split("/")[0] : null
-      }};
-
-    } else {
-      context.res = { status: 400, body: { error: "Unknown action or missing params" } };
+      return;
     }
+
+    context.res = { status: 400, body: { error: "Unknown action" } };
+
   } catch(err) {
     context.log.error("screenconnect failed", err);
     context.res = { status: 500, body: { error: err.message } };
