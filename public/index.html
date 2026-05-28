@@ -1844,9 +1844,14 @@ function renderDetail(){
   const t = TICKETS.find(x=>x.id===CURRENT_ID);
   const host = $("#detailPanel");
   if(!t){
-    host.innerHTML = `<div class="detail-empty"><div class="big">Select a ticket</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">No ticket selected</div></div>`;
+    host.innerHTML = `<div class="detail-empty"><div class="big">Select a ticket</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">No ticket selected · click a row to inspect</div></div>`;
     return;
   }
+
+  // Save already-loaded device context so we can restore it after DOM rebuild
+  const savedKandji = _kandjiLoaded.has(t.id) ? document.getElementById(`kandjiCtx_${t.id}`)?.innerHTML : null;
+  const savedIntune = _intuneLoaded.has(t.id) ? document.getElementById(`intuneCtx_${t.id}`)?.innerHTML : null;
+  const savedSC     = _scLoaded.has(t.id)     ? document.getElementById(`scCtx_${t.id}`)?.innerHTML     : null;
   const sum = SUMMARIES.get(t.id);
   const similar = SIMILAR.get(t.id);
   const m365 = M365_CONTEXT.get(t.id);
@@ -2013,6 +2018,11 @@ function renderDetail(){
   host.querySelectorAll("[data-prov-step]").forEach(b=>{
     b.addEventListener("click",()=>runProvisioningStep(t.id, b.dataset.provStep));
   });
+
+  // Restore already-loaded device context HTML — prevents re-spinning on refresh
+  if (savedKandji) { const el = document.getElementById(`kandjiCtx_${t.id}`); if(el) el.innerHTML = savedKandji; }
+  if (savedIntune) { const el = document.getElementById(`intuneCtx_${t.id}`); if(el) el.innerHTML = savedIntune; }
+  if (savedSC)     { const el = document.getElementById(`scCtx_${t.id}`);     if(el) el.innerHTML = savedSC; }
 }
 
 function renderAISummary(sum, suggestRows){
