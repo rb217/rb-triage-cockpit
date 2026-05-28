@@ -3053,6 +3053,7 @@ async function fetchTickets({silent=false}={}){
     // Clear device context caches so fresh data loads on next open
     _intuneLoaded.clear();
     _scLoaded.clear();
+    _kandjiLoaded.clear();
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
     const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
@@ -5727,6 +5728,7 @@ document.getElementById("refreshFleetBtn")?.addEventListener("click", () => { _f
 let _scSessions = new Map(); // machineNameOrEmail -> sessions
 const _intuneLoaded = new Set(); // ticketIds that have loaded Intune
 const _scLoaded = new Set();     // ticketIds that have loaded ScreenConnect
+const _kandjiLoaded = new Set(); // ticketIds that have loaded Kandji
 
 async function loadScreenConnectContext(ticketId, ticket) {
   const host = document.getElementById(`scCtx_${ticketId}`);
@@ -5780,21 +5782,31 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
   const host = document.getElementById(`scCtx_${ticketId}`);
   if (!host) return;
 
-  // SC sessions are named by hostname, not serial — search device name first
-  const searchName = deviceName || serial;
+  // SC session names use just the hostname (e.g. "TF-4QL95M3" not "WORKGROUP\TF-4QL95M3")
+  // Strip any domain/workgroup prefix and use the bare hostname
+  const stripPrefix = (name) => name ? name.replace(/^[^\\]+\\/, "").trim() : name;
+  const hostname = stripPrefix(deviceName) || stripPrefix(serial);
+  const searchName = hostname || deviceName || serial;
+
   host.innerHTML = `<div style="font-size:12px;color:var(--ink-dim)"><div class="loader" style="display:inline-block;margin-right:6px"></div>Searching for ${searchName}…</div>`;
 
   try {
     let sessions = [];
 
-    // Try device name first (this is what SC uses for session names)
-    if (deviceName) {
+    // Search by hostname (primary)
+    if (hostname) {
+      const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(hostname)}`);
+      if (res.ok) sessions = (await res.json()).sessions || [];
+    }
+
+    // Also try full device name if different
+    if (!sessions.length && deviceName && stripPrefix(deviceName) !== deviceName) {
       const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(deviceName)}`);
       if (res.ok) sessions = (await res.json()).sessions || [];
     }
 
-    // Fall back to serial if no match
-    if (!sessions.length && serial && serial !== deviceName) {
+    // Fall back to serial
+    if (!sessions.length && serial && serial !== hostname) {
       const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(serial)}`);
       if (res.ok) sessions = (await res.json()).sessions || [];
     }
@@ -5807,14 +5819,19 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
     const active = sessions.filter(s => s.isActive);
     host.innerHTML = `
       <div style="font-size:12px;color:var(--ink-dim);margin-bottom:8px">
-        ${sessions.length} session(s) · ${active.length > 0 ? `<span style="color:var(--ok)">● ${active.length} active now</span>` : `<span style="color:var(--ink-ghost)">no active session</span>`}
+        ${sessions.length} session(s) · ${active.length > 0
+          ? `<span style="color:var(--ok)">● ${active.length} active now</span>`
+          : `<span style="color:var(--ink-ghost)">no active session</span>`}
       </div>
       ${sessions.slice(0, 3).map(s => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:5px">
           <div>
             <div style="font-size:12px;font-weight:600;color:var(--ink)">${s.name || s.guestMachineName || s.sessionId}</div>
-            ${s.isActive ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>` :
-              s.lastConnected ? `<div style="font-size:10px;color:var(--ink-ghost)">Last: ${new Date(s.lastConnected).toLocaleString()}</div>` : ""}
+            ${s.isActive
+              ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>`
+              : s.lastConnected
+                ? `<div style="font-size:10px;color:var(--ink-ghost)">Last: ${new Date(s.lastConnected).toLocaleString()}</div>`
+                : ""}
           </div>
           ${s.launchUrl ? `<a href="${s.launchUrl}" target="_blank" class="btn primary" style="font-size:11px;padding:4px 10px;text-decoration:none">🖥️ Connect</a>` : ""}
         </div>
@@ -5829,6 +5846,9 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
 // KANDJI DEVICE CONTEXT IN TICKETS
 // ============================================================
 async function loadKandjiTicketContext(ticketId, ticket) {
+  if (_kandjiLoaded.has(ticketId)) return; // already loaded
+  _kandjiLoaded.add(ticketId);
+
   const host = document.getElementById(`kandjiCtx_${ticketId}`);
   if (!host) return;
 
