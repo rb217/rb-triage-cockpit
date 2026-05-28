@@ -5774,43 +5774,47 @@ async function loadScreenConnectContext(ticketId, ticket) {
 }
 
 async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
-  if (_scLoaded.has(ticketId)) return; // already loaded
+  if (_scLoaded.has(ticketId)) return;
   _scLoaded.add(ticketId);
 
   const host = document.getElementById(`scCtx_${ticketId}`);
   if (!host) return;
-  host.innerHTML = `<div style="font-size:12px;color:var(--ink-dim)"><div class="loader" style="display:inline-block;margin-right:6px"></div>Searching by serial: ${serial}…</div>`;
-  try {
-    const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(serial)}`);
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await res.json();
-    let sessions = data.sessions || [];
 
-    // Also try device name if serial returns nothing
-    if (!sessions.length && deviceName && deviceName !== serial) {
-      const res2 = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(deviceName)}`);
-      if (res2.ok) {
-        const data2 = await res2.json();
-        sessions = data2.sessions || [];
-      }
+  // SC sessions are named by hostname, not serial — search device name first
+  const searchName = deviceName || serial;
+  host.innerHTML = `<div style="font-size:12px;color:var(--ink-dim)"><div class="loader" style="display:inline-block;margin-right:6px"></div>Searching for ${searchName}…</div>`;
+
+  try {
+    let sessions = [];
+
+    // Try device name first (this is what SC uses for session names)
+    if (deviceName) {
+      const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(deviceName)}`);
+      if (res.ok) sessions = (await res.json()).sessions || [];
+    }
+
+    // Fall back to serial if no match
+    if (!sessions.length && serial && serial !== deviceName) {
+      const res = await fetch(`/api/screenconnect?action=find&name=${encodeURIComponent(serial)}`);
+      if (res.ok) sessions = (await res.json()).sessions || [];
     }
 
     if (!sessions.length) {
-      host.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No ScreenConnect session found for ${deviceName||serial}</div>`;
+      host.innerHTML = `<div style="color:var(--ink-dim);font-size:12px">No ScreenConnect session found for <strong>${searchName}</strong> — device may not have the SC agent installed</div>`;
       return;
     }
 
     const active = sessions.filter(s => s.isActive);
     host.innerHTML = `
       <div style="font-size:12px;color:var(--ink-dim);margin-bottom:8px">
-        ${sessions.length} session(s) · ${active.length > 0 ? `<span style="color:var(--ok)">● ${active.length} active now</span>` : "no active sessions"}
-        <span style="color:var(--ink-ghost);margin-left:6px;font-size:10px">matched by serial</span>
+        ${sessions.length} session(s) · ${active.length > 0 ? `<span style="color:var(--ok)">● ${active.length} active now</span>` : `<span style="color:var(--ink-ghost)">no active session</span>`}
       </div>
       ${sessions.slice(0, 3).map(s => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--panel-2);border-radius:var(--radius-sm);margin-bottom:5px">
           <div>
-            <div style="font-size:12px;font-weight:600;color:var(--ink)">${s.name||s.guestMachineName||s.sessionId}</div>
-            ${s.isActive ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>` : s.lastConnected ? `<div style="font-size:10px;color:var(--ink-ghost)">Last: ${new Date(s.lastConnected).toLocaleString()}</div>` : ""}
+            <div style="font-size:12px;font-weight:600;color:var(--ink)">${s.name || s.guestMachineName || s.sessionId}</div>
+            ${s.isActive ? `<div style="font-size:10px;color:var(--ok)">● Connected now</div>` :
+              s.lastConnected ? `<div style="font-size:10px;color:var(--ink-ghost)">Last: ${new Date(s.lastConnected).toLocaleString()}</div>` : ""}
           </div>
           ${s.launchUrl ? `<a href="${s.launchUrl}" target="_blank" class="btn primary" style="font-size:11px;padding:4px 10px;text-decoration:none">🖥️ Connect</a>` : ""}
         </div>
