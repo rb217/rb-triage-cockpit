@@ -2247,6 +2247,10 @@ function selectTicket(id){
   // load device contexts — guards prevent re-running if already loaded
   if (t) setTimeout(() => loadKandjiTicketContext(id, t), 400);
   if (t) setTimeout(() => loadIntuneAndSCContext(id, t), 500);
+  // load Retriever context for hardware/onboarding tickets
+  if (t && (t.category === "Hardware" || t.category === "Employee Onboarding/Offboarding")) {
+    setTimeout(() => loadRetrieverTicketContext(id, t.requester_email||"", t.requester_name||""), 600);
+  }
 }
 
 function isProvisioningTicket(t){
@@ -2271,6 +2275,7 @@ function renderDetail(){
   const savedKandji = _deviceCtxCache.get(`kandji_${t.id}`) || null;
   const savedIntune = _deviceCtxCache.get(`intune_${t.id}`) || null;
   const savedSC     = _deviceCtxCache.get(`sc_${t.id}`)     || null;
+  const savedRet    = _deviceCtxCache.get(`retriever_${t.id}`) || null;
   const sum = SUMMARIES.get(t.id);
   const similar = SIMILAR.get(t.id);
   const m365 = M365_CONTEXT.get(t.id);
@@ -2337,31 +2342,56 @@ function renderDetail(){
     ${t.category === "Network" ? `
     <div class="detail-section">
       <h3>🌐 Network Context</h3>
-      <div id="merakiCtx_${t.id}" style="font-size:12px;color:var(--ink-dim)">
+      <div id="merakiCtx_${t.id}" style="font-size:12px;color:var(--label-2)">
         <div class="loader" style="display:inline-block;margin-right:6px"></div>Checking Meraki for network issues…
       </div>
     </div>` : ""}
 
-    <div class="detail-section">
-      <h3>🍎 Mac Device Context</h3>
-      <div id="kandjiCtx_${t.id}" style="font-size:12px;color:var(--ink-dim)">
-        <div class="loader" style="display:inline-block;margin-right:6px"></div>Looking up device in Kandji…
+    <!-- UNIFIED DEVICE INTELLIGENCE — Kandji + Intune + Retriever + SC -->
+    <div class="detail-section" id="deviceIntelSection_${t.id}">
+      <h3>Device Intelligence
+        <span class="right" style="display:flex;gap:5px">
+          <span id="devIntelBadge_${t.id}" style="display:none"></span>
+        </span>
+      </h3>
+      <!-- Mac (Kandji) -->
+      <div id="kandjiCtx_${t.id}" style="font-size:12px;color:var(--label-2);margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px;color:var(--label-3);font-size:11px">
+          <div class="loader" style="width:10px;height:10px;border-width:1.5px"></div>Checking Kandji…
+        </div>
       </div>
+      <!-- Windows (Intune) -->
+      <div id="intuneCtx_${t.id}" style="font-size:12px;color:var(--label-2);margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px;color:var(--label-3);font-size:11px">
+          <div class="loader" style="width:10px;height:10px;border-width:1.5px"></div>Checking Intune…
+        </div>
+      </div>
+      <!-- Retriever deployment history -->
+      <div id="retrieverCtx_${t.id}" style="font-size:12px;color:var(--label-2);margin-bottom:6px"></div>
+      <!-- Remote Access (SC) -->
+      <div id="scCtx_${t.id}" style="font-size:12px;color:var(--label-2);margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px;color:var(--label-3);font-size:11px">
+          <div class="loader" style="width:10px;height:10px;border-width:1.5px"></div>Searching ScreenConnect…
+        </div>
+      </div>
+      <!-- Quick actions row -->
+      <div id="deviceQuickActions_${t.id}" style="display:none;margin-top:8px"></div>
     </div>
 
-    <div class="detail-section">
-      <h3>💻 Windows Device Context</h3>
-      <div id="intuneCtx_${t.id}" style="font-size:12px;color:var(--ink-dim)">
-        <div class="loader" style="display:inline-block;margin-right:6px"></div>Looking up device in Intune…
+    <!-- RETRIEVER — Deploy / Return (shown for hardware + onboarding/offboarding tickets) -->
+    ${(t.category === "Hardware" || t.category === "Employee Onboarding/Offboarding") ? `
+    <div class="detail-section" id="retrieverSection_${t.id}">
+      <h3>📦 Device Logistics
+        <span class="right">
+          <button class="btn ghost" style="font-size:10px;padding:2px 8px;border-radius:var(--r-full)" onclick="loadRetrieverTicketContext(${t.id},'${(t.requester_email||"").replace(/'/g,"\\'")}','${(t.requester_name||"").replace(/'/g,"\\'")}')">⟳ Refresh</button>
+        </span>
+      </h3>
+      <div id="retrieverTicketCtx_${t.id}">
+        <div style="display:flex;align-items:center;gap:6px;color:var(--label-3);font-size:11px">
+          <div class="loader" style="width:10px;height:10px;border-width:1.5px"></div>Loading Retriever data…
+        </div>
       </div>
-    </div>
-
-    <div class="detail-section">
-      <h3>🖥️ Remote Access</h3>
-      <div id="scCtx_${t.id}" style="font-size:12px;color:var(--ink-dim)">
-        <div class="loader" style="display:inline-block;margin-right:6px"></div>Searching ScreenConnect…
-      </div>
-    </div>
+    </div>` : ""}
 
     ${isProv ? `
     <div class="provisioning" id="provSection">
@@ -2442,6 +2472,7 @@ function renderDetail(){
   if (savedKandji) { const el = document.getElementById(`kandjiCtx_${t.id}`); if(el) el.innerHTML = savedKandji; }
   if (savedIntune) { const el = document.getElementById(`intuneCtx_${t.id}`); if(el) el.innerHTML = savedIntune; }
   if (savedSC)     { const el = document.getElementById(`scCtx_${t.id}`);     if(el) el.innerHTML = savedSC; }
+  if (savedRet)    { const el = document.getElementById(`retrieverCtx_${t.id}`); if(el) el.innerHTML = savedRet; }
 }
 
 function renderAISummary(sum, suggestRows){
@@ -6103,13 +6134,17 @@ function getRunbooksForTicket(ticket) {
 
 function renderRunbooksPanel(ticket) {
   const suggested = _runbooks.filter(r => r.categories.includes(ticket.category));
-  if (!suggested.length) return "";
+  const allRunbooks = _runbooks.slice(0, 4);
+  const toShow = suggested.length ? suggested : allRunbooks;
+  if (!toShow.length) return "";
   return `
     <div class="detail-section">
-      <h3>⚡ One-Click Runbooks</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-        ${suggested.map(r => `
-          <button class="btn" style="justify-content:start;gap:8px;font-size:12px" onclick="startRunbook('${r.id}',${ticket.id})">
+      <h3>⚡ Runbooks
+        ${suggested.length ? `<span style="background:var(--sys-blue);color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:var(--r-full);margin-left:4px">${suggested.length} match${suggested.length>1?"es":""}</span>` : ""}
+      </h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+        ${toShow.map(r => `
+          <button class="btn ${suggested.includes(r)?"primary":""}" style="justify-content:start;gap:8px;font-size:12px;border-radius:var(--r-md);${suggested.includes(r)?"":"background:var(--fill-secondary);"}" onclick="startRunbook('${r.id}',${ticket.id})">
             <span>${r.icon}</span><span>${r.name}</span>
           </button>
         `).join("")}
@@ -6804,6 +6839,164 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
 }
 
 // ============================================================
+// RETRIEVER — TICKET CONTEXT INTEGRATION
+// ============================================================
+const _retrieverLoaded = new Set();
+
+async function loadRetrieverTicketContext(ticketId, email, requesterName) {
+  if (_retrieverLoaded.has(ticketId)) return;
+  _retrieverLoaded.add(ticketId);
+
+  const host = document.getElementById(`retrieverTicketCtx_${ticketId}`);
+  if (!host) return;
+
+  const ticket = window._tickets?.find(x => x.id === ticketId);
+  const isOffboarding = (ticket?.category === "Employee Onboarding/Offboarding" &&
+    (ticket?.sub_category || "").toLowerCase().includes("offboard")) ||
+    (ticket?.subject || "").toLowerCase().includes("offboard") ||
+    (ticket?.subject || "").toLowerCase().includes("leaving") ||
+    (ticket?.subject || "").toLowerCase().includes("last day");
+
+  try {
+    // Fetch warehouse + deployments in parallel
+    const [warehouseRes, deploymentsRes] = await Promise.allSettled([
+      fetch("/api/retrieverList?type=warehouse"),
+      fetch("/api/retrieverList?type=deployments")
+    ]);
+
+    const warehouseData = warehouseRes.status === "fulfilled" && warehouseRes.value.ok
+      ? (await warehouseRes.value.json()).warehouse?.results || []
+      : [];
+    const deploymentsData = deploymentsRes.status === "fulfilled" && deploymentsRes.value.ok
+      ? (await deploymentsRes.value.json()).deployments?.results || []
+      : [];
+
+    // Find deployments for this user by email or name
+    const userDeployments = deploymentsData.filter(d => {
+      const emp = d.employee_info || {};
+      return (email && emp.email?.toLowerCase() === email.toLowerCase()) ||
+             (requesterName && emp.name?.toLowerCase() === requesterName.toLowerCase());
+    });
+
+    // Ready-to-deploy devices
+    const readyDevices = warehouseData.filter(d => d.status === "ready_for_deployment").slice(0, 5);
+
+    let html = "";
+
+    // ── Current deployments for this user ──────────────────────────────────
+    if (userDeployments.length) {
+      html += `
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--label-3);margin-bottom:6px">
+            ${userDeployments.length === 1 ? "Deployed Device" : `${userDeployments.length} Deployed Devices`}
+          </div>
+          ${userDeployments.slice(0, 3).map(d => {
+            const status = d.shipment?.status || d.status || "unknown";
+            const statusColor = status === "delivered" ? "var(--sys-green)" :
+                               status.includes("transit") ? "var(--sys-blue)" :
+                               status === "returned" ? "var(--label-3)" : "var(--sys-orange)";
+            const deviceLabel = `${d.device_type || "Device"}${d.serial_number ? ` · ${d.serial_number}` : ""}`;
+            return `
+              <div style="background:var(--surface-2);border:0.5px solid var(--sep);border-radius:var(--r-md);padding:9px 11px;margin-bottom:5px">
+                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:5px">
+                  <div>
+                    <div style="font-size:12.5px;font-weight:600;color:var(--label)">${escape(deviceLabel)}</div>
+                    ${d.shipment?.tracking_number ? `<div style="font-size:10px;color:var(--label-3);font-family:var(--mono)">${d.shipment.tracking_number}</div>` : ""}
+                  </div>
+                  <span style="padding:2px 8px;border-radius:var(--r-full);font-size:9.5px;font-weight:700;background:${statusColor}18;color:${statusColor}">${status.replace(/_/g," ").toUpperCase()}</span>
+                </div>
+                <div style="display:flex;gap:6px">
+                  ${d.id ? `<a href="https://app.helloretriever.com/orders/${d.id}" target="_blank" class="btn ghost" style="font-size:10px;padding:3px 8px;border-radius:var(--r-full);text-decoration:none">View Order ↗</a>` : ""}
+                  ${isOffboarding && status !== "returned" ? `
+                    <button class="btn" style="font-size:10px;padding:3px 8px;border-radius:var(--r-full);color:var(--sys-orange);border-color:rgba(255,159,10,0.3)"
+                      onclick="showRetrieverReturnModal(${ticketId},'${escape(requesterName)}','${escape(email)}','${d.device_type||"laptop"}','${d.serial_number||""}')">
+                      📦 Initiate Return
+                    </button>` : ""}
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    } else {
+      html += `<div style="font-size:11px;color:var(--label-3);margin-bottom:8px">No active Retriever deployments found for ${escape(requesterName || email || "this user")}</div>`;
+    }
+
+    // ── For Hardware tickets or Onboarding — show available devices ────────
+    if (readyDevices.length && !isOffboarding) {
+      html += `
+        <div style="margin-bottom:8px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--label-3);margin-bottom:6px">
+            ${readyDevices.length} Device${readyDevices.length>1?"s":""} Ready to Deploy
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
+            ${readyDevices.map(d => `
+              <div style="background:var(--ok-fill);border:0.5px solid rgba(48,209,88,0.2);border-radius:var(--r-md);padding:6px 10px;font-size:11px">
+                <div style="font-weight:600;color:var(--label)">${d.device_type || "Device"}</div>
+                ${d.serial_number ? `<div style="font-size:10px;color:var(--label-3);font-family:var(--mono)">${d.serial_number}</div>` : ""}
+              </div>
+            `).join("")}
+          </div>
+          <button class="btn primary" style="font-size:12px;padding:6px 14px;width:100%;justify-content:center"
+            onclick="showRetrieverDeployModal(${ticketId},'${escape(requesterName)}','${escape(email)}')">
+            🚀 Deploy Device to ${escape(requesterName || "User")}
+          </button>
+        </div>
+      `;
+    }
+
+    // ── For Offboarding — show return CTA if no deployment found ───────────
+    if (isOffboarding && !userDeployments.length) {
+      html += `
+        <div style="background:var(--warn-fill);border:0.5px solid rgba(255,159,10,0.3);border-radius:var(--r-md);padding:10px 12px">
+          <div style="font-size:11px;font-weight:600;color:var(--sys-orange);margin-bottom:6px">⚠ Offboarding — Initiate Device Return</div>
+          <div style="font-size:11px;color:var(--label-2);margin-bottom:8px">No active deployments found. If the employee has a company device, create a return order.</div>
+          <button class="btn" style="font-size:12px;padding:6px 14px;color:var(--sys-orange);border-color:rgba(255,159,10,0.3)"
+            onclick="showRetrieverReturnModal(${ticketId},'${escape(requesterName)}','${escape(email)}','laptop','')">
+            📦 Create Return Order
+          </button>
+        </div>
+      `;
+    }
+
+    host.innerHTML = html || `<div style="font-size:11px;color:var(--label-3)">No Retriever data available</div>`;
+
+  } catch(e) {
+    host.innerHTML = `<div style="font-size:11px;color:var(--label-3)">Retriever: ${e.message}</div>`;
+  }
+}
+
+function showRetrieverDeployModal(ticketId, requesterName, requesterEmail) {
+  // Pre-fill the existing deploy modal with ticket context
+  const modal = document.getElementById("deployModal");
+  if (!modal) return;
+  const nameEl = document.getElementById("dep-emp-name");
+  const emailEl = document.getElementById("dep-emp-email");
+  const tidEl = document.getElementById("dep-ticket-id");
+  if (nameEl) nameEl.value = requesterName || "";
+  if (emailEl) emailEl.value = requesterEmail || "";
+  if (tidEl) tidEl.value = ticketId || "";
+  openModal("deployModal");
+}
+
+function showRetrieverReturnModal(ticketId, requesterName, requesterEmail, deviceType, serial) {
+  // Pre-fill the existing return modal with ticket context
+  const modal = document.getElementById("returnModal");
+  if (!modal) return;
+  const nameEl = document.getElementById("ret-emp-name");
+  const emailEl = document.getElementById("ret-emp-email");
+  const tidEl = document.getElementById("ret-ticket-id");
+  const devEl = document.getElementById("ret-device");
+  const snEl = document.getElementById("ret-serial");
+  if (nameEl) nameEl.value = requesterName || "";
+  if (emailEl) emailEl.value = requesterEmail || "";
+  if (tidEl) tidEl.value = ticketId || "";
+  if (devEl) devEl.value = deviceType || "laptop";
+  if (snEl) snEl.value = serial || "";
+  openModal("returnModal");
+}
+
+// ============================================================
 // KANDJI DEVICE CONTEXT IN TICKETS
 // ============================================================
 async function loadKandjiTicketContext(ticketId, ticket) {
@@ -6829,26 +7022,33 @@ async function loadKandjiTicketContext(ticketId, ticket) {
     const c = d._compliance || {};
     const daysLabel = c.daysSinceCheckIn !== null ? `${c.daysSinceCheckIn}d ago` : "never";
 
+    // Device age calculation
+    const enrolledYear = d.enrollment_date ? new Date(d.enrollment_date).getFullYear() : null;
+    const deviceAgeYears = enrolledYear ? new Date().getFullYear() - enrolledYear : null;
+    const isOldDevice = deviceAgeYears !== null && deviceAgeYears >= 4;
+
     setDeviceCtx("kandji", ticketId, `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
-          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;margin-bottom:2px">Device</div>
-          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.device_name||"Unknown"}</div>
-          <div style="font-size:10px;color:var(--ink-dim)">${d.model||""}</div>
+        <div style="background:var(--surface-2);border-radius:var(--r-md);padding:7px 10px">
+          <div style="font-size:9.5px;color:var(--label-3);font-weight:600;margin-bottom:2px">Device</div>
+          <div style="font-size:12.5px;font-weight:600;color:var(--label)">${d.device_name||"Unknown"}</div>
+          <div style="font-size:10px;color:var(--label-2)">${d.model||""}</div>
         </div>
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
-          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;margin-bottom:2px">macOS</div>
-          <div style="font-size:12px;font-weight:600;color:var(--ink)">${d.os_version||"—"}</div>
-          <div style="font-size:10px;color:var(--ink-dim)">Last check-in: ${daysLabel}</div>
+        <div style="background:var(--surface-2);border-radius:var(--r-md);padding:7px 10px">
+          <div style="font-size:9.5px;color:var(--label-3);font-weight:600;margin-bottom:2px">macOS</div>
+          <div style="font-size:12.5px;font-weight:600;color:var(--label)">${d.os_version||"—"}</div>
+          <div style="font-size:10px;color:var(--label-2)">Check-in: ${daysLabel}</div>
         </div>
       </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
-        <span style="padding:2px 8px;border-radius:20px;font-size:10px;background:${d.filevault_enabled?"var(--ok-dim)":"var(--danger-dim)"};color:${d.filevault_enabled?"var(--ok)":"var(--danger)"}">${d.filevault_enabled?"🔒 FileVault ON":"🔓 FileVault OFF"}</span>
-        ${c.issues?.length ? c.issues.map(i=>`<span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--warn-dim);color:var(--warn)">⚠ ${i}</span>`).join("") : `<span style="padding:2px 8px;border-radius:20px;font-size:10px;background:var(--ok-dim);color:var(--ok)">✓ Compliant</span>`}
+        <span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:${d.filevault_enabled?"var(--ok-fill)":"var(--danger-fill)"};color:${d.filevault_enabled?"var(--sys-green)":"var(--sys-red)"}">${d.filevault_enabled?"🔒 FileVault ON":"🔓 FileVault OFF"}</span>
+        ${c.issues?.length ? c.issues.map(i=>`<span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:var(--warn-fill);color:var(--sys-orange)">⚠ ${i}</span>`).join("") : `<span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:var(--ok-fill);color:var(--sys-green)">✓ Compliant</span>`}
+        ${isOldDevice ? `<span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:var(--warn-fill);color:var(--sys-orange)">⚠ ${deviceAgeYears}yr old — consider replacement</span>` : ""}
       </div>
       <div style="display:flex;gap:6px">
-        <button class="btn" style="font-size:11px;padding:4px 10px" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳ Force Check-in</button>
-        <button class="btn" style="font-size:11px;padding:4px 10px" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">📋 Full details</button>
+        <button class="btn" style="font-size:11px;padding:4px 10px;border-radius:var(--r-full)" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳ Check-in</button>
+        <button class="btn ghost" style="font-size:11px;padding:4px 10px;border-radius:var(--r-full)" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">Details ↗</button>
+        ${isOldDevice ? `<button class="btn" style="font-size:11px;padding:4px 10px;border-radius:var(--r-full);color:var(--sys-orange);border-color:rgba(255,159,10,0.3)" onclick="showRetrieverDeployModal(${ticketId},'${(ticket?.requester_name||"").replace(/'/g,"\\'")}','${(ticket?.requester_email||"").replace(/'/g,"\\'")}')">📦 Replace Device</button>` : ""}
       </div>
     `);
 
