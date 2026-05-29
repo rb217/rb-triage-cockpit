@@ -3232,7 +3232,7 @@ async function renderStandup(){
           {name:"Steve Mitchell", initials:"SM", count:steveOpen,       color:"var(--sys-green)"},
           {name:"Eric Hnatov",    initials:"EH", count:ericOpen,        color:"var(--sys-orange)"},
         ].map(a=>`
-          <div class="standup-row" style="cursor:pointer" onclick="switchMode('triage');FILTERS.scope='all';FILTERS.responder='${a.name}';renderList();updateCounts()"
+          <div class="standup-row" style="cursor:pointer" onclick="switchMode('triage');FILTERS.scope='all';const sb=document.getElementById('ticketSearch');if(sb){sb.value='${a.name}';FILTERS.search='${a.name}';}renderList();updateCounts()"
             onmouseover="this.style.background='var(--fill-secondary)'"
             onmouseout="this.style.background='transparent'">
             <span class="lbl" style="display:flex;align-items:center;gap:8px">
@@ -4117,24 +4117,6 @@ function closeCmdPalette() {
   document.getElementById("cmdPalette")?.classList.remove("open");
 }
 
-document.getElementById("cmdPalette")?.addEventListener("click", e => {
-  if (e.target === document.getElementById("cmdPalette")) closeCmdPalette();
-});
-
-document.getElementById("cmdInput")?.addEventListener("input", e => {
-  const q = e.target.value.trim().toLowerCase();
-  if (!q) { renderCmdDefault(); return; }
-  renderCmdSearch(q);
-});
-
-document.getElementById("cmdInput")?.addEventListener("keydown", e => {
-  const items = document.querySelectorAll(".cmd-item");
-  if (e.key === "ArrowDown") { e.preventDefault(); _cmdSelectedIdx = Math.min(_cmdSelectedIdx+1, items.length-1); updateCmdSelection(); }
-  if (e.key === "ArrowUp")   { e.preventDefault(); _cmdSelectedIdx = Math.max(_cmdSelectedIdx-1, 0); updateCmdSelection(); }
-  if (e.key === "Enter")     { e.preventDefault(); items[_cmdSelectedIdx]?.click(); }
-  if (e.key === "Escape")    { closeCmdPalette(); }
-});
-
 function updateCmdSelection() {
   document.querySelectorAll(".cmd-item").forEach((el,i) => el.classList.toggle("selected", i===_cmdSelectedIdx));
   document.querySelectorAll(".cmd-item")[_cmdSelectedIdx]?.scrollIntoView({block:"nearest"});
@@ -4157,29 +4139,33 @@ function renderCmdDefault() {
   _cmdSelectedIdx = 0;
   const res = document.getElementById("cmdResults");
   if (!res) return;
-  res.innerHTML = '<div class="cmd-section-label">Quick Actions</div>';
-  const actions = [
-    ["⟳","Refresh Tickets","r","fetchTickets()"],
-    ["☀️","Open Standup","s","switchMode('standup')"],
-    ["⌗","Detect Patterns","","detectPatterns()"],
-    ["🌐","Network Tab","n","switchMode('network')"],
-    ["🍎","Mac Fleet","","switchMode('fleet')"],
-    ["📊","Analytics","","switchMode('analytics')"],
-    ["🧠","Knowledge Base","","switchMode('kb')"],
-    ["⚡","AI Triage All Visible","","runAITriage(Array.from(document.querySelectorAll('.ticket')).map(e=>parseInt(e.dataset.id)).filter(Boolean))"],
+
+  const actionItems = [
+    ["⟳", "Refresh Tickets",          "r", () => fetchTickets()],
+    ["☀️", "Open Standup",             "s", () => switchMode("standup")],
+    ["⌗",  "Detect Patterns",          "",  () => detectPatterns()],
+    ["🌐", "Network",                  "n", () => switchMode("network")],
+    ["🍎", "Mac Fleet",                "",  () => switchMode("fleet")],
+    ["📊", "Analytics",                "",  () => switchMode("analytics")],
+    ["🧠", "Knowledge Base",           "",  () => switchMode("kb")],
+    ["⚡", "AI Triage Visible Tickets","",  () => { const ids = Array.from(document.querySelectorAll(".ticket")).map(e=>parseInt(e.dataset.id)).filter(Boolean); if(ids.length) runAITriage(ids); }],
+    ["📋", "Show Standup",             "",  () => switchMode("standup")],
   ];
-  actions.forEach(([icon,label,shortcut,action]) => {
-    res.appendChild(cmdItem(icon, label, "", shortcut, () => eval(action)));
+
+  res.innerHTML = '<div class="cmd-section-label">Quick Actions</div>';
+  actionItems.forEach(([icon, label, shortcut, fn]) => {
+    res.appendChild(cmdItem(icon, label, "", shortcut, fn));
   });
+
   if (CURRENT_ID) {
-    res.innerHTML += '<div class="cmd-section-label">Current Ticket</div>';
-    const t = TICKETS.find(x=>x.id===CURRENT_ID);
+    const t = TICKETS.find(x => x.id === CURRENT_ID);
     if (t) {
+      res.innerHTML += '<div class="cmd-section-label">Current Ticket #' + CURRENT_ID + '</div>';
       [
-        ["⚡","Run AI Triage",()=>runAITriage([t.id])],
-        ["✉️","Draft Reply",()=>generateDraftReply(t.id)],
-        ["✓","Resolve Ticket",()=>stageChange(t,{status:4},"resolve","Resolved","Mark resolved")],
-      ].forEach(([icon,label,action])=>res.appendChild(cmdItem(icon,label,"","",action)));
+        ["⚡", "Run AI Triage",  () => runAITriage([t.id])],
+        ["✉️", "Draft Reply",   () => generateDraftReply(t.id)],
+        ["✓",  "Resolve Ticket",() => stageChange(t, "status", t.status, 4, "Mark resolved")],
+      ].forEach(([icon, label, fn]) => res.appendChild(cmdItem(icon, label, "", "", fn)));
     }
   }
   updateCmdSelection();
@@ -5688,6 +5674,7 @@ async function loadKB() {
     if (!res.ok) throw new Error(`${res.status}`);
     const data = await res.json();
     _kbData = data.articles || [];
+    window._kbData = _kbData;
     renderKBGrid(_kbData);
   } catch(err) {
     grid.innerHTML = `<div style="text-align:center;padding:60px;color:var(--sys-red);font-size:13px;grid-column:1/-1">Failed to load KB: ${err.message}</div>`;
@@ -7343,6 +7330,27 @@ setInterval(updateClock,1000); updateClock();
   await loadSavedViews();
   LAST_SEEN_TIMESTAMP = await storeGet("last_seen_ts");
   await loadPrincipal();
+
+  // Wire command palette events
+
+  document.getElementById("cmdPalette")?.addEventListener("click", e => {
+    if (e.target === document.getElementById("cmdPalette")) closeCmdPalette();
+  });
+  
+  document.getElementById("cmdInput")?.addEventListener("input", e => {
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) { renderCmdDefault(); return; }
+    renderCmdSearch(q);
+  });
+  
+  document.getElementById("cmdInput")?.addEventListener("keydown", e => {
+    const items = document.querySelectorAll(".cmd-item");
+    if (e.key === "ArrowDown") { e.preventDefault(); _cmdSelectedIdx = Math.min(_cmdSelectedIdx+1, items.length-1); updateCmdSelection(); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); _cmdSelectedIdx = Math.max(_cmdSelectedIdx-1, 0); updateCmdSelection(); }
+    if (e.key === "Enter")     { e.preventDefault(); items[_cmdSelectedIdx]?.click(); }
+    if (e.key === "Escape")    { closeCmdPalette(); }
+  });
+  
   await fetchTickets();
   // Auto-refresh every 60 seconds
   setInterval(()=>fetchTickets({silent:true}), 60000);
