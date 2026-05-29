@@ -512,6 +512,19 @@
     from { opacity:0; transform: translateY(6px) scale(0.99); }
     to   { opacity:1; transform: translateY(0)   scale(1); }
   }
+  @keyframes ticketShimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position:  200% 0; }
+  }
+  .ticket.selected::after {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(105deg, transparent 40%, rgba(10,132,255,0.04) 50%, transparent 60%);
+    background-size: 200% 100%;
+    animation: ticketShimmer 3s ease-in-out infinite;
+    pointer-events: none;
+  }
   .ticket:hover {
     background: var(--surface-2);
     border-color: var(--sep-hot);
@@ -1062,10 +1075,43 @@
   #cmdFooter { padding: 10px 16px; border-top: 0.5px solid var(--sep); display: flex; gap: 14px; font-size: 11px; color: var(--label-3); }
   #cmdFooter kbd { background: var(--fill-secondary); border: 0.5px solid var(--sep); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 10px; }
 
+
+  /* ══ TICKET HOVER PREVIEW ══ */
+  #ticketHoverPreview {
+    position: fixed; z-index: 50; pointer-events: none;
+    background: rgba(18,18,26,0.97);
+    backdrop-filter: saturate(180%) blur(20px);
+    border: 0.5px solid var(--sep-hot);
+    border-radius: var(--r-xl);
+    padding: 14px 16px;
+    width: 320px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 0 0 0.5px var(--sep);
+    opacity: 0; transition: opacity .15s;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  #ticketHoverPreview.visible { opacity: 1; }
   /* ══ UTILITIES ══ */
   .empty-state { padding:60px 20px; text-align:center; color:var(--label-2); }
   .empty-state .big { font-size:28px; color:var(--label-3); margin-bottom:8px; font-weight:300; letter-spacing:-0.5px; }
   .hidden { display:none !important; }
+
+  /* ══ MOBILE / NARROW VIEWPORT ══ */
+  @media (max-width: 900px) {
+    .main { grid-template-columns: 1fr !important; }
+    .sidebar { display: none; }
+    .detail { display: none; border-left: none; }
+    .detail.mobile-show { display: block; position: fixed; inset: 96px 0 0; z-index: 40; }
+    .center { grid-template-rows: 52px 64px 1fr; }
+    .modetabs { padding: 0 6px; }
+    .modetab { font-size: 11.5px; padding: 0 8px; }
+    .stats-strip { grid-template-columns: repeat(3,1fr) !important; }
+    .stat:nth-child(n+4) { display: none; }
+    .toolbar { padding: 0 10px; }
+  }
+  @media (max-width: 600px) {
+    .modetab .badge { display: none; }
+    .topbar-meta .meta-item:not(:first-child) { display: none; }
+  }
 
 
     background: var(--fill-secondary); border: 0.5px solid var(--sep);
@@ -1098,6 +1144,7 @@
       <button class="btn ghost" id="refreshBtn" style="font-size:13px">⟳</button>
       <button class="btn" id="openStagedBtn">Changes <span class="pill-sm" id="stagedCount">0</span></button>
       <button class="btn primary" id="bulkAiBtn">⚡ AI Triage</button>
+      <button class="btn ghost" id="officeHoursBtn" onclick="toggleOfficeHoursMode()" title="Toggle office hours mode" style="font-size:12px;padding:4px 10px;border-radius:var(--r-full)">☀️ Office Mode</button>
       <button class="btn ghost" id="openSettingsBtn" title="Auto-reply settings" style="width:32px;height:32px;padding:0;justify-content:center;border-radius:50%;font-size:15px">⚙</button>
       <button class="btn ghost" id="userMenuBtn" title="Account" style="width:32px;height:32px;padding:0;justify-content:center;border-radius:50%;font-weight:700;font-size:12px;background:var(--fill-secondary)"><span id="userInitials">NM</span></button>
     </div>
@@ -1800,6 +1847,7 @@
   </div>
 </div>
 
+<div id="ticketHoverPreview"></div>
 <div class="toast-host" id="toastHost"></div>
 
 <!-- RETRIEVER RETURN MODAL -->
@@ -2030,6 +2078,102 @@ function isNew(t){
   return new Date(t.created_at) > new Date(LAST_SEEN_TIMESTAMP);
 }
 
+async function logSCSession(ticketId, sessionName) {
+  const now = new Date().toLocaleString();
+  const agent = ME?.name || ME?.email || 'IT Team';
+  const note = `[🖥️ ScreenConnect Session]\nSession: ${sessionName}\nInitiated by: ${agent}\nTime: ${now}`;
+  try {
+    const res = await fetch('/api/replySend', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ticketId, body: note, private: true })
+    });
+    if(res.ok) { toast('✓ Session logged to ticket', 'info'); playSuccessChime(); }
+    else throw new Error(await res.text());
+  } catch(e) { toast('✗ Log failed: '+e.message, 'error'); }
+}
+
+// ── Hover Preview ────────────────────────────────────────────
+let _hoverTimer = null;
+let _hoverEl = null;
+
+function showTicketHoverPreview(el, id, evt) {
+  clearTimeout(_hoverTimer);
+  _hoverTimer = setTimeout(() => {
+    const t = TICKETS.find(x=>x.id===id);
+    if (!t) return;
+    const prev = document.getElementById('ticketHoverPreview');
+    if (!prev) return;
+    const sum = SUMMARIES.get(id);
+    const ageDays = t.created_at ? Math.floor((Date.now()-new Date(t.created_at))/86400000) : 0;
+    prev.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:10px;color:var(--label-3);font-family:var(--mono)">#${id}</span>
+        <span class="pill ${PRIO_CLASS[t.priority]||''}" style="font-size:9.5px">${PRIO_MAP[t.priority]||'?'}</span>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:var(--label);margin-bottom:6px;line-height:1.3">${escape(t.subject||'')}</div>
+      ${sum?.summary ? `<div style="font-size:11.5px;color:var(--label-2);border-left:2px solid var(--sys-blue);padding-left:8px;line-height:1.5;margin-bottom:8px">${escape(sum.summary)}</div>` : ''}
+      <div style="font-size:11px;color:var(--label-3);display:flex;justify-content:space-between">
+        <span>${escape(t.requester_name||'')}</span>
+        <span>${ageDays}d old · ${escape(t.category||'—')}</span>
+      </div>
+    `;
+    // Position near cursor but avoid viewport edges
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = evt.clientX + 16, top = evt.clientY - 40;
+    if (left + 320 > vw - 20) left = evt.clientX - 336;
+    if (top + 160 > vh - 20) top = vh - 180;
+    prev.style.left = left + 'px';
+    prev.style.top = top + 'px';
+    prev.classList.add('visible');
+    _hoverEl = el;
+  }, 450);
+}
+
+function hideTicketHoverPreview() {
+  clearTimeout(_hoverTimer);
+  const prev = document.getElementById('ticketHoverPreview');
+  if (prev) prev.classList.remove('visible');
+  _hoverEl = null;
+}
+
+function copyTicketLink(id) {
+  const url = 'https://renovationbrands.freshservice.com/a/tickets/'+id;
+  navigator.clipboard?.writeText(url).then(()=>toast('✓ Link copied','info')).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=url;ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    toast('✓ Link copied','info');
+  });
+}
+
+function countUp(el, target, dur=600) {
+  if(!el) return;
+  const start = parseInt(el.textContent)||0;
+  if(start===target) return;
+  const step=(target-start)/(dur/16); let cur=start;
+  const t=setInterval(()=>{
+    cur+=step;
+    const done=step>0?cur>=target:cur<=target;
+    el.textContent=done?target:Math.round(cur);
+    if(done) clearInterval(t);
+  },16);
+}
+
+function playChime(freq=880, type2='sine', dur=0.18) {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = freq; o.type = type2;
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.start(ctx.currentTime); o.stop(ctx.currentTime + dur);
+    setTimeout(() => ctx.close(), 500);
+  } catch(e) {}
+}
+function playNewTicketChime() { playChime(523,'sine',0.15); setTimeout(()=>playChime(659,'sine',0.2),120); }
+function playSuccessChime()   { playChime(659,'sine',0.12); setTimeout(()=>playChime(880,'sine',0.18),100); }
+
 function toast(msg, type){
   const t=document.createElement("div");t.className="toast"+(type?" "+type:"");t.textContent=msg;
   $("#toastHost").appendChild(t);
@@ -2064,6 +2208,15 @@ function applyFilters(){
     return new Date(b.created_at) - new Date(a.created_at); // newest first within same priority
   });
   return list;
+}
+
+function animateStatEl(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const prev = parseInt(el.textContent) || 0;
+  if (prev === val) return;
+  el.dataset.target = val;
+  countUp(el, val, 500);
 }
 
 function updateCounts(){
@@ -2114,11 +2267,12 @@ function updateCounts(){
 }
 
 function renderList(){
+  buildStreakMap(TICKETS);
   _kbFocusIdx = -1; // reset keyboard nav on every render
   const list = applyFilters();
   const host = $("#ticketList");
   if(!list.length){
-    host.innerHTML = `<div class="empty-state"><div class="big">No matches</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">Adjust filters or load data</div></div>`;
+    host.innerHTML = `<div class="empty-state" style="padding:80px 20px"><div class="big">No matches</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">Adjust filters or load data</div></div>`;
     return;
   }
 
@@ -2156,6 +2310,12 @@ function renderList(){
   });
 }
 
+let _streakMap = {};
+function buildStreakMap(tickets) {
+  const map={}, ago=Date.now()-7*86400000;
+  tickets.forEach(t=>{if(t.requester_name&&new Date(t.created_at)>=ago) map[t.requester_name]=(map[t.requester_name]||0)+1;});
+  _streakMap=map;
+}
 function renderTicketCard(t){
   const sum = SUMMARIES.get(t.id);
   const query = $("#searchInput")?.value?.trim() || "";
@@ -2167,6 +2327,8 @@ function renderTicketCard(t){
   const statusPill = `<span class="pill">${STATUS_MAP[t.status]||"?"}</span>`;
   const inCluster = PATTERNS.find(p=>p.ticketIds.includes(t.id));
   const clusterPill = inCluster ? `<span class="pill cluster">⌗ ${escape(inCluster.tag)}</span>` : "";
+  const _sc = (_streakMap[t.requester_name]||0);
+  const streakPill = _sc>=3 ? `<span class="pill" style="background:rgba(255,159,10,0.10);color:var(--sys-orange)" title="${_sc} tickets in 7 days">🔥 ${_sc}</span>` : "";
   const checked = SELECTED_IDS.has(t.id);
   const sel = CURRENT_ID===t.id?"selected":"";
   const newClass = isNew(t) ? "new" : "";
@@ -2197,7 +2359,7 @@ function renderTicketCard(t){
       <div class="ticket-body">
         <div class="ticket-meta-row">
           <span class="ticket-id">#${t.id}</span>
-          ${prioPill}${statusPill}${clusterPill}
+          ${prioPill}${statusPill}${clusterPill}${streakPill}
           <span>· ${escape(t.category||"—")}${t.sub_category?" / "+escape(t.sub_category):""}</span>
         </div>
         <div class="ticket-subject">${subjectHtml}</div>
@@ -2216,12 +2378,28 @@ function renderTicketCard(t){
   `;
 }
 
+// Remember scroll positions per ticket
+const _scrollMemory = new Map();
+function saveDetailScroll() {
+  if (CURRENT_ID) {
+    const el = document.querySelector('.detail');
+    if (el) _scrollMemory.set(CURRENT_ID, el.scrollTop);
+  }
+}
+function restoreDetailScroll(id) {
+  const pos = _scrollMemory.get(id) || 0;
+  setTimeout(() => {
+    const el = document.querySelector('.detail');
+    if (el) el.scrollTop = pos;
+  }, 50);
+}
+
 function selectTicket(id){
   const alreadySelected = CURRENT_ID === id;
+  if (!alreadySelected) saveDetailScroll();
   CURRENT_ID = id;
   renderList();
-  // Only fully re-render detail if switching to a different ticket
-  if (!alreadySelected) renderDetail();
+  if (!alreadySelected) { renderDetail(); restoreDetailScroll(id); }
   const t = TICKETS.find(x=>x.id===id);
   // lazy-load similar tickets for this one
   if(!SIMILAR.has(id) && CLOSED_TICKETS.length){
@@ -2247,6 +2425,9 @@ function selectTicket(id){
   // load device contexts — guards prevent re-running if already loaded
   if (t) setTimeout(() => loadKandjiTicketContext(id, t), 400);
   if (t) setTimeout(() => loadIntuneAndSCContext(id, t), 500);
+  // load ticket conversation thread + activity timeline
+  if (t) setTimeout(() => loadTicketThread(id), 700);
+  if (t) setTimeout(() => loadTicketTimeline(id), 900);
   // load Retriever context for hardware/onboarding tickets
   if (t && (t.category === "Hardware" || t.category === "Employee Onboarding/Offboarding")) {
     setTimeout(() => loadRetrieverTicketContext(id, t.requester_email||"", t.requester_name||""), 600);
@@ -2311,7 +2492,10 @@ function renderDetail(){
 
   host.innerHTML = `
     <div class="detail-hd">
-      <div class="id">Ticket #${t.id}</div>
+      <div class="id" style="display:flex;align-items:center;gap:8px">
+        <span>Ticket #${t.id}</span>
+        <button onclick="copyTicketLink(${t.id})" title="Copy link" style="background:none;border:none;cursor:pointer;color:var(--label-3);font-size:13px;padding:2px 4px;border-radius:4px;transition:.15s" onmouseover="this.style.color='var(--sys-blue)'" onmouseout="this.style.color='var(--label-3)'">⎘</button>
+      </div>
       <h2>${escape(t.subject||"(no subject)")}</h2>
       <div class="detail-pills">
         <span class="pill ${PRIO_CLASS[t.priority]||""}">${PRIO_MAP[t.priority]||"?"}</span>
@@ -2399,9 +2583,33 @@ function renderDetail(){
       <div id="provContent">${renderProvisioning(provisioning, t)}</div>
     </div>` : ""}
 
+    <div class="detail-section" id="timelineSection_${t.id}">
+      <h3>Activity Timeline
+        <span class="right">
+          <span id="timelineMeta_${t.id}" style="font-size:10px;color:var(--label-3)"></span>
+        </span>
+      </h3>
+      <div id="timelineCtx_${t.id}">
+        <div style="display:flex;align-items:center;gap:6px;color:var(--label-3);font-size:11px">
+          <div class="loader" style="width:10px;height:10px;border-width:1.5px"></div>Loading activity…
+        </div>
+      </div>
+    </div>
+
     <div class="detail-section">
       <h3>Original message</h3>
-      <div style="font-size:12px;line-height:1.6;color:var(--ink-dim);background:var(--panel-2);padding:12px;border:1px solid var(--border);max-height:200px;overflow-y:auto">${escape(t.description_text||"(no description)")}</div>
+      <div style="font-size:12px;line-height:1.6;color:var(--label-2);background:var(--fill-quaternary);padding:12px;border-radius:var(--r-md);border:0.5px solid var(--sep);max-height:180px;overflow-y:auto">${escape(t.description_text||"(no description)")}</div>
+    </div>
+
+    <div class="detail-section" id="threadSection_${t.id}">
+      <h3>Conversation Thread
+        <span class="right"><button class="btn ghost" style="font-size:10px;padding:2px 8px;border-radius:var(--r-full)" onclick="loadTicketThread(${t.id})">⟳ Refresh</button></span>
+      </h3>
+      <div id="threadCtx_${t.id}">
+        <div style="display:flex;align-items:center;gap:6px;color:var(--label-3);font-size:11px">
+          <div class="loader" style="width:10px;height:10px;border-width:1.5px"></div>Loading thread…
+        </div>
+      </div>
     </div>
 
     <div class="detail-section">
@@ -2811,6 +3019,13 @@ function renderReplyDraft(draft, ticket){
   `;
 }
 
+function expandMentions(text) {
+  return (text||'')
+    .replace(/@nathan\b/gi, '@Nathan Maharg')
+    .replace(/@steve\b/gi,  '@Steve Mitchell')
+    .replace(/@eric\b/gi,   '@Eric Hnatov');
+}
+
 async function sendReply(ticketId, body, isAutoSend){
   if(!body || !body.trim()){
     toast("Reply is empty", "error");
@@ -2820,7 +3035,7 @@ async function sendReply(ticketId, body, isAutoSend){
     const res = await fetch("/api/replySend", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ticketId, body, isAutoSend})
+      body: JSON.stringify({ticketId, body: expandMentions(body), isAutoSend})
     });
     if(!res.ok){
       const errBody = await res.json().catch(()=>({}));
@@ -3473,6 +3688,9 @@ async function detectPatterns(){
     // Update badge
     const badge = document.getElementById("patternsBadge");
     if(badge) { badge.textContent = PATTERNS.length || "0"; badge.style.display = PATTERNS.length ? "" : "none"; }
+    // Notify Teams for high-severity clusters
+    const highSev = PATTERNS.filter(p=>p.severity==='high');
+    if (highSev.length > 0) notifyTeamsPattern(highSev);
 
     renderPatterns();
     updateCounts();
@@ -3558,6 +3776,20 @@ function renderPatterns(){
   host.querySelectorAll("[data-tid]").forEach(el=>el.addEventListener("click",()=>{switchMode("triage");selectTicket(parseInt(el.dataset.tid));}));
 }
 
+async function notifyTeamsPattern(patterns) {
+  if (!patterns.length) return;
+  const key = 'teams_notified_' + patterns.map(p=>p.title).join('|');
+  try {
+    if (sessionStorage.getItem(key)) return; // already notified this session
+    sessionStorage.setItem(key, '1');
+    const text = patterns.map(p => `🔴 **${p.title}** — ${p.ticketIds.length} tickets`).join('\n');
+    await fetch('/api/aiTriage', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'teams_notify', message: text, patterns })
+    });
+  } catch(e) { console.warn('Teams notification failed:', e.message); }
+}
+
 async function declareIncident(pattern) {
   if(!confirm(`Declare incident for "${pattern.title}"?\n\nThis will create a parent incident ticket in Freshservice linking all ${pattern.ticketIds?.length||0} related tickets.`)) return;
   toast("Creating incident ticket…", "info");
@@ -3635,11 +3867,17 @@ async function fetchTickets({silent=false}={}){
     if(!res.ok) throw new Error("API "+res.status);
     const data = await res.json();
     TICKETS = (data.open || []).map(normalizeTicket);
+    const _prevIds = new Set((window._tickets||[]).map(t=>t.id));
     window._tickets = TICKETS;
+    const _newArrivals = TICKETS.filter(t=>!_prevIds.has(t.id)&&t.priority>=3);
+    if(_prevIds.size&&_newArrivals.length) playNewTicketChime();
     // Clear device context caches so fresh data loads on next open
     _intuneLoaded.clear();
     _scLoaded.clear();
     _kandjiLoaded.clear();
+    _retrieverLoaded.clear();
+    _threadLoaded.clear();
+    _timelineLoaded.clear();
     _deviceCtxCache.clear();
     // Auto-detect patterns silently on every refresh
     setTimeout(() => detectPatterns(), 2000);
@@ -4103,12 +4341,12 @@ document.addEventListener("keydown", e => {
   const tickets = Array.from(document.querySelectorAll(".ticket"));
   if (e.key === "j" || e.key === "ArrowDown") {
     e.preventDefault();
-    _kbFocusIdx = Math.min(_kbFocusIdx + 1, tickets.length - 1);
+    _kbFocusIdx = (_kbFocusIdx + 1) % (tickets.length||1);
     tickets[_kbFocusIdx]?.click();
     tickets[_kbFocusIdx]?.scrollIntoView({ block: "nearest" });
   } else if (e.key === "k" || e.key === "ArrowUp") {
     e.preventDefault();
-    _kbFocusIdx = Math.max(_kbFocusIdx - 1, 0);
+    _kbFocusIdx = (_kbFocusIdx - 1 + (tickets.length||1)) % (tickets.length||1);
     tickets[_kbFocusIdx]?.click();
     tickets[_kbFocusIdx]?.scrollIntoView({ block: "nearest" });
   } else if (e.key === " ") {
@@ -4127,8 +4365,35 @@ document.addEventListener("keydown", e => {
   }
 });
 
+// ── Office Hours Mode ────────────────────────────────────────────────────────
+let _officeHoursMode = false;
+const OFFICE_HOURS = { start: 8, end: 18 }; // 8am-6pm
+
+function isInOfficeHours() {
+  const h = new Date().getHours();
+  return h >= OFFICE_HOURS.start && h < OFFICE_HOURS.end;
+}
+
+async function toggleOfficeHoursMode() {
+  _officeHoursMode = !_officeHoursMode;
+  await storeSet('office_hours_mode', _officeHoursMode ? 'true' : 'false');
+  const btn = document.getElementById('officeHoursBtn');
+  if (btn) {
+    btn.textContent = _officeHoursMode ? '🌙 Away Mode' : '☀️ Office Mode';
+    btn.style.background = _officeHoursMode ? 'rgba(94,92,230,0.15)' : '';
+    btn.style.color = _officeHoursMode ? 'var(--sys-indigo)' : '';
+  }
+  toast(_officeHoursMode ? '🌙 Away mode — auto-reply active' : '☀️ Back in office', 'info');
+}
+
 // ── Command Palette ─────────────────────────────────────────────────────────
 let _cmdSelectedIdx = 0;
+let _cmdSearchHistory = JSON.parse(localStorage.getItem('cmd_history')||'[]');
+function saveCmdSearch(query) {
+  if(!query || query.length < 2) return;
+  _cmdSearchHistory = [query, ..._cmdSearchHistory.filter(q=>q!==query)].slice(0,8);
+  try { localStorage.setItem('cmd_history', JSON.stringify(_cmdSearchHistory)); } catch(e) {}
+}
 
 function openCmdPalette(mode) {
   const pal = document.getElementById("cmdPalette");
@@ -4183,7 +4448,17 @@ function renderCmdDefault() {
     ["📋", "Show Standup",             "",  () => switchMode("standup")],
   ];
 
-  res.innerHTML = '<div class="cmd-section-label">Quick Actions</div>';
+  res.innerHTML = '';
+  if (_cmdSearchHistory.length) {
+    res.innerHTML += '<div class="cmd-section-label">Recent Searches</div>';
+    _cmdSearchHistory.slice(0,4).forEach(q => {
+      res.appendChild(cmdItem('🕐', q, '', '', () => {
+        const inp = document.getElementById('cmdInput');
+        if(inp) { inp.value = q; renderCmdSearch(q); }
+      }));
+    });
+  }
+  res.innerHTML += '<div class="cmd-section-label">Quick Actions</div>';
   actionItems.forEach(([icon, label, shortcut, fn]) => {
     res.appendChild(cmdItem(icon, label, "", shortcut, fn));
   });
@@ -4240,6 +4515,7 @@ function renderCmdSearch(query) {
     String(t.id).includes(query)
   ).slice(0,6);
 
+  saveCmdSearch(query);
   if (!ticketMatches.length) {
     res.innerHTML = `<div style="padding:20px;text-align:center;color:var(--label-3);font-size:13px">No results for "${escape(query)}"</div>`;
     return;
@@ -5648,45 +5924,39 @@ async function loadRequesterProfile(ticketId, email) {
 
 function renderRequesterProfile(profile, email) {
   if (!profile?.found) return "";
-  const s = profile.stats;
-  const ai = profile.aiAssessment;
-  const riskColor = { low: "var(--ok)", medium: "var(--warn)", high: "var(--danger)" }[ai?.riskLevel] || "var(--ink-dim)";
+  const s = profile.stats || {};
+  const ai = profile.aiAssessment || {};
   const brand = profile.brand;
+  const riskColor = {low:"var(--sys-green)",medium:"var(--sys-orange)",high:"var(--sys-red)"}[ai.riskLevel] || "var(--label-3)";
+  const sentimentIcon = {positive:"😊",neutral:"😐",negative:"😤",frustrated:"😤"}[ai.sentiment] || "😐";
+  const repeatFlag = s.total >= 5;
+  const heavyUser = s.total >= 10;
 
   return `
     <div class="detail-section">
-      <h3>Requester Intelligence</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
-        ${brand ? `<div style="grid-column:span 2;background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;font-weight:600;color:var(--accent)">🏷️ ${brand}</div>` : ""}
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
-          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Tickets</div>
-          <div style="font-size:18px;font-weight:800;color:var(--ink)">${s.total}</div>
-        </div>
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
-          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Per 30 Days</div>
-          <div style="font-size:18px;font-weight:800;color:${s.ticketsPer30Days>5?"var(--warn)":"var(--ink)"}">${s.ticketsPer30Days||"—"}</div>
-        </div>
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
-          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg Resolution</div>
-          <div style="font-size:18px;font-weight:800;color:var(--ink)">${s.avgResolutionHours ? s.avgResolutionHours+"h" : "—"}</div>
-        </div>
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px">
-          <div style="font-size:10px;color:var(--ink-ghost);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Top Category</div>
-          <div style="font-size:11px;font-weight:700;color:var(--ink);margin-top:3px">${s.topCategory||"—"}</div>
-        </div>
-      </div>
-      ${ai ? `
-        <div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost)">AI Assessment</span>
-            <span style="background:${riskColor}22;color:${riskColor};padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700">${(ai.riskLevel||"").toUpperCase()} RISK</span>
-            ${ai.trainingOpportunity ? `<span style="background:var(--info)22;color:var(--info);padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700">TRAINING OPP</span>` : ""}
+      <h3>Requester Intelligence
+        ${heavyUser ? '<span style="background:rgba(255,159,10,0.1);color:var(--sys-orange);font-size:9px;font-weight:700;padding:1px 7px;border-radius:var(--r-full);margin-left:4px">HIGH VOLUME</span>' : ''}
+      </h3>
+      ${brand ? `<div style="background:var(--accent-dim);border:0.5px solid rgba(10,132,255,0.25);border-radius:var(--r-md);padding:7px 11px;font-size:12px;font-weight:600;color:var(--sys-blue);margin-bottom:8px">🏷️ ${brand}</div>` : ""}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:10px">
+        ${[
+          {label:"Total Tickets", val:s.total||0, color:"var(--label)"},
+          {label:"Open Now",      val:s.open||0,  color:s.open>3?"var(--sys-orange)":"var(--label)"},
+          {label:"Avg Priority",  val:s.avgPriority?({1:"Low",2:"Med",3:"High",4:"Urgent"}[Math.round(s.avgPriority)]||"—"):"—", color:"var(--label)"},
+        ].map(x=>`
+          <div style="background:var(--surface-2);border-radius:var(--r-md);padding:7px 9px;text-align:center">
+            <div style="font-size:18px;font-weight:700;color:${x.color};font-variant-numeric:tabular-nums;letter-spacing:-0.5px">${x.val}</div>
+            <div style="font-size:9.5px;color:var(--label-3);font-weight:500;margin-top:1px;text-transform:uppercase;letter-spacing:0.5px">${x.label}</div>
           </div>
-          <div style="font-size:12px;color:var(--ink-dim);margin-bottom:4px">${escape(ai.pattern||"")}</div>
-          <div style="font-size:12px;color:var(--ink);border-left:2px solid var(--accent);padding-left:7px">${escape(ai.recommendation||"")}</div>
-        </div>
-      ` : ""}
-      <button class="btn ghost" style="font-size:11px;width:100%;justify-content:center" onclick="showBrandPrompt('${email}','${profile.requester?.first_name||""}',async(b)=>{_profileCache.get('${email}') && (_profileCache.get('${email}').brand=b);renderDetail();})">🏷️ Change brand assignment</button>
+        `).join("")}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        ${ai.riskLevel ? `<span style="padding:2px 9px;border-radius:var(--r-full);font-size:10px;font-weight:700;background:${riskColor}18;color:${riskColor}">${ai.riskLevel?.toUpperCase()} RISK</span>` : ""}
+        ${ai.sentiment ? `<span style="padding:2px 9px;border-radius:var(--r-full);font-size:10px;font-weight:600;background:var(--fill-secondary);color:var(--label-2)">${sentimentIcon} ${ai.sentiment}</span>` : ""}
+        ${s.commonCategory ? `<span style="padding:2px 9px;border-radius:var(--r-full);font-size:10px;font-weight:600;background:var(--fill-secondary);color:var(--label-2)">Usually: ${s.commonCategory}</span>` : ""}
+        ${repeatFlag ? `<span style="padding:2px 9px;border-radius:var(--r-full);font-size:10px;font-weight:600;background:var(--fill-secondary);color:var(--label-2)">Repeat requester</span>` : ""}
+      </div>
+      ${ai.notes ? `<div style="font-size:12px;color:var(--label-2);line-height:1.55;background:var(--fill-quaternary);padding:8px 10px;border-radius:var(--r-md);border-left:2px solid var(--sys-blue)">${escape(ai.notes)}</div>` : ""}
     </div>
   `;
 }
@@ -5884,6 +6154,33 @@ function getBusinessImpactScore(ticket) {
   return (catScore * 2) + (prioScore * 2) + ageBonus;
 }
 
+function exportAnalyticsCSV() {
+  const ACTIVE = new Set([2,3,6]);
+  const tickets = TICKETS.filter(t => ACTIVE.has(t.status));
+  const rows = [
+    ['ID','Subject','Status','Priority','Category','Sub-Category','Requester','Assignee','Created','Due By'],
+    ...tickets.map(t => [
+      t.id,
+      '"'+(t.subject||'').replace(/"/g,'""')+'"',
+      {2:'Open',3:'Pending',4:'Resolved',5:'Closed',6:'Hold'}[t.status]||t.status,
+      {1:'Low',2:'Medium',3:'High',4:'Urgent'}[t.priority]||t.priority,
+      t.category||'',
+      t.sub_category||'',
+      '"'+(t.requester_name||'').replace(/"/g,'""')+'"',
+      '"'+(t.responder_name||'Unassigned').replace(/"/g,'""')+'"',
+      t.created_at ? new Date(t.created_at).toLocaleDateString() : '',
+      t.due_by ? new Date(t.due_by).toLocaleDateString() : '',
+    ])
+  ];
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `tickets-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  toast('✓ CSV downloaded', 'info');
+}
+
 async function renderAnalytics() {
   const host = document.getElementById("mainAnalytics");
   if (!host) return;
@@ -5951,7 +6248,11 @@ async function renderAnalytics() {
           <div style="font-size:22px;font-weight:700;letter-spacing:-0.5px">Analytics</div>
           <div style="font-size:13px;color:var(--label-2);margin-top:4px">${tickets.length} active tickets · ${Object.keys(brandMap).length} brands · last refreshed ${new Date().toLocaleTimeString()}</div>
         </div>
-        <button class="btn ghost" onclick="renderAnalytics()">⟳ Refresh</button>
+<div style="display:flex;gap:6px">
+          <button class="btn ghost" onclick="exportAnalyticsCSV()" style="font-size:12px">⬇ CSV</button>
+          <button class="btn ghost" onclick="window.print()" style="font-size:12px">🖨 PDF</button>
+          <button class="btn ghost" onclick="renderAnalytics()">⟳ Refresh</button>
+        </div>
       </div>
 
       <!-- Top KPI row -->
@@ -6839,6 +7140,110 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
 }
 
 // ============================================================
+// TICKET ACTIVITY TIMELINE
+// ============================================================
+const _timelineLoaded = new Set();
+
+async function loadTicketTimeline(ticketId) {
+  if (_timelineLoaded.has(ticketId)) return;
+  _timelineLoaded.add(ticketId);
+  const host = document.getElementById(`timelineCtx_${ticketId}`);
+  const meta = document.getElementById(`timelineMeta_${ticketId}`);
+  if (!host) return;
+  try {
+    const res = await fetch(`/api/ticketThread?ticketId=${ticketId}&type=activities`);
+    const data = res.ok ? await res.json() : {};
+    const activities = data.activities || [];
+    if (meta) meta.textContent = `${activities.length} events`;
+    if (!activities.length) {
+      host.innerHTML = '<div style="font-size:11px;color:var(--label-3);padding:4px 0">No activity yet.</div>';
+      return;
+    }
+    const typeMap = {
+      'created':   {icon:'✦', color:'var(--sys-blue)',   label:'Created'},
+      'assigned':  {icon:'→',  color:'var(--sys-indigo)', label:'Assigned'},
+      'status':    {icon:'◉',  color:'var(--sys-cyan)',   label:'Status changed'},
+      'priority':  {icon:'▲',  color:'var(--sys-orange)', label:'Priority changed'},
+      'note':      {icon:'✎',  color:'var(--label-2)',    label:'Note added'},
+      'reply':     {icon:'✉',  color:'var(--sys-green)',  label:'Reply sent'},
+      'sla':       {icon:'⏱',  color:'var(--sys-red)',    label:'SLA event'},
+      'reopened':  {icon:'↩',  color:'var(--sys-purple)', label:'Reopened'},
+    };
+    host.innerHTML = `<div style="position:relative;padding-left:20px">`
+      + activities.slice(0,15).map((a, i) => {
+          const type = a.actor_type==='System'?'sla':
+                       a.body?.toLowerCase().includes('status')? 'status':
+                       a.body?.toLowerCase().includes('assign') ? 'assigned':
+                       a.body?.toLowerCase().includes('priority')? 'priority':
+                       a.body?.toLowerCase().includes('note')   ? 'note':
+                       a.body?.toLowerCase().includes('reply')  ? 'reply': 'created';
+          const t = typeMap[type] || {icon:'·', color:'var(--label-3)', label:''};
+          const when = a.created_at ? new Date(a.created_at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+          const actor = a.actor?.name || a.actor_type || 'System';
+          const body = (a.body||'').replace(/<[^>]+>/g,' ').trim().slice(0,120);
+          return `
+            <div style="position:relative;padding:6px 0 6px 14px;border-left:1.5px solid ${i===activities.length-1?'transparent':'var(--sep)'};margin-left:-20px">
+              <div style="position:absolute;left:-7px;top:10px;width:12px;height:12px;border-radius:50%;background:${t.color}22;border:1.5px solid ${t.color};display:flex;align-items:center;justify-content:center;font-size:7px;color:${t.color}">${t.icon}</div>
+              <div style="display:flex;justify-content:space-between;gap:8px">
+                <div style="font-size:11.5px;font-weight:500;color:var(--label)">${escape(actor)}</div>
+                <div style="font-size:10px;color:var(--label-3);flex-shrink:0">${when}</div>
+              </div>
+              ${body ? `<div style="font-size:11px;color:var(--label-2);margin-top:2px;line-height:1.4">${escape(body)}</div>` : ''}
+            </div>
+          `;
+        }).join('') + '</div>';
+  } catch(e) {
+    const h=document.getElementById(`timelineCtx_${ticketId}`);
+    if(h) h.innerHTML='<div style="font-size:11px;color:var(--label-3)">Timeline unavailable</div>';
+  }
+}
+
+// ============================================================
+// TICKET CONVERSATION THREAD
+// ============================================================
+const _threadLoaded = new Set();
+
+async function loadTicketThread(ticketId, force=false) {
+  if (_threadLoaded.has(ticketId) && !force) return;
+  _threadLoaded.add(ticketId);
+  const host = document.getElementById(`threadCtx_${ticketId}`);
+  if (!host) return;
+  try {
+    const res = await fetch(`/api/ticketThread?ticketId=${ticketId}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const convs = data.conversations || [];
+    if (!convs.length) {
+      host.innerHTML = `<div style="font-size:12px;color:var(--label-3);padding:8px 0">No replies yet.</div>`;
+      return;
+    }
+    host.innerHTML = convs.map(c => {
+      const isPrivate = c.private;
+      const isAgent = c.user_id && !c.incoming;
+      const agentName = c.agent_name || c.support_email || 'Agent';
+      const fromName = c.incoming ? (c.from_email?.split('<')[0]?.trim() || 'Requester') : agentName;
+      const body = (c.body_text || c.body || '').replace(/<[^>]+>/g,' ').trim().slice(0, 500);
+      const when = c.created_at ? new Date(c.created_at).toLocaleString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      const accent = isPrivate ? 'var(--sys-orange)' : isAgent ? 'var(--sys-blue)' : 'var(--label-3)';
+      const bg = isPrivate ? 'rgba(255,159,10,0.05)' : isAgent ? 'rgba(10,132,255,0.05)' : 'var(--fill-quaternary)';
+      const tag = isPrivate ? '🔒 Note' : isAgent ? '✉ Reply' : '← Requester';
+      return `
+        <div style="border-left:2px solid ${accent};padding:8px 12px;margin-bottom:8px;background:${bg};border-radius:0 var(--r-md) var(--r-md) 0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <div style="font-size:11px;font-weight:600;color:${accent}">${tag} · ${escape(fromName)}</div>
+            <div style="font-size:10px;color:var(--label-3)">${when}</div>
+          </div>
+          <div style="font-size:12.5px;color:var(--label-2);line-height:1.55">${escape(body)}</div>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    const host2 = document.getElementById(`threadCtx_${ticketId}`);
+    if(host2) host2.innerHTML = `<div style="font-size:11px;color:var(--label-3)">Thread unavailable: ${e.message}</div>`;
+  }
+}
+
+// ============================================================
 // RETRIEVER — TICKET CONTEXT INTEGRATION
 // ============================================================
 const _retrieverLoaded = new Set();
@@ -7528,6 +7933,13 @@ setInterval(updateClock,1000); updateClock();
 // ============================================================
 (async ()=>{
   await loadSavedViews();
+  _officeHoursMode = await storeGet('office_hours_mode') === 'true';
+  const ohBtn = document.getElementById('officeHoursBtn');
+  if (ohBtn && _officeHoursMode) {
+    ohBtn.textContent = '🌙 Away Mode';
+    ohBtn.style.background = 'rgba(94,92,230,0.15)';
+    ohBtn.style.color = 'var(--sys-indigo)';
+  }
   LAST_SEEN_TIMESTAMP = await storeGet("last_seen_ts");
   await loadPrincipal();
 
