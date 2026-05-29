@@ -136,3 +136,10 @@ module.exports = {
   fsGetAgentMap, fsGetRequester, fsFindAgentByName, fsReplyToTicket,
   callClaude, parseJsonResponse, postTeamsCard
 };
+
+async function fsGetConversations(ticketId) {
+  const data = await fsRequest(`/tickets/${ticketId}/conversations`);
+  return data.conversations || [];
+}
+
+module.exports = Object.assign(module.exports, { fsGetConversations });
