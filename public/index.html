@@ -990,13 +990,6 @@
   .ars-blocked-list .tag button { background:none; border:none; color:var(--sys-red); cursor:pointer; font-size:14px; line-height:1; padding:0; }
 
   /* ══ AUTO-TRIAGE FEED ══ */
-  .at-feed-item { background:var(--fill-quaternary); border:0.5px solid var(--sep); border-radius:var(--r-md); padding:10px 12px; margin-bottom:5px; font-size:13px; }
-  .at-feed-item .hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
-  .at-feed-item .tid { color:var(--sys-blue); font-weight:700; font-family:var(--mono); font-size:11px; }
-  .at-feed-item .when { color:var(--label-2); font-size:11px; }
-  .at-feed-item .applied { color:var(--sys-green); font-size:12px; margin:2px 0; }
-  .at-feed-item .skipped { color:var(--label-2); font-size:11px; }
-
   /* ══ TEAMS MODAL ══ */
   .teams-output { background:var(--bg); border:0.5px solid var(--sep); border-radius:var(--r-md); padding:14px; font-family:var(--mono); font-size:12px; line-height:1.6; white-space:pre-wrap; color:var(--label); max-height:280px; overflow-y:auto; }
   .agent-select { display:flex; gap:6px; margin-bottom:12px; }
@@ -2005,6 +1998,19 @@ const PRIO_MAP   = {1:"Low",2:"Medium",3:"High",4:"Urgent"};
 const PRIO_CLASS = {1:"low",2:"medium",3:"high",4:"urgent"};
 const PRIO_NAME_TO_NUM = {"Low":1,"Medium":2,"High":3,"Urgent":4};
 
+// ===================================================
+// ============================================================
+// CONFIG
+// ============================================================
+const ME = {
+  names: ["Nathan Maharg","Nathan","Nathan.M","nathan.maharg"],
+  team: ["Nathan Maharg","Steve Mitchell","Eric Hnatov"]
+};
+const STATUS_MAP = {2:"Open",3:"Pending",4:"Resolved",5:"Closed",6:"Hold"};
+const PRIO_MAP   = {1:"Low",2:"Medium",3:"High",4:"Urgent"};
+const PRIO_CLASS = {1:"low",2:"medium",3:"high",4:"urgent"};
+const PRIO_NAME_TO_NUM = {"Low":1,"Medium":2,"High":3,"Urgent":4};
+
 // ============================================================
 // STATE
 // ============================================================
@@ -2072,9 +2078,7 @@ function formatAge(iso){
   if(h<1) return Math.round(h*60)+"m";
   if(h<24) return Math.round(h)+"h";
   return Math.round(h/24)+"d";
-}
-function ageClass(iso){const h=ageHours(iso);if(h>168)return"stale";if(h>72)return"aging";return"";}
-function isMine(t){return t.responder_name && ME.names.some(n=>n.toLowerCase()===t.responder_name.toLowerCase());}
+}function isMine(t){return t.responder_name && ME.names.some(n=>n.toLowerCase()===t.responder_name.toLowerCase());}
 function isTeam(t){return t.responder_name && ME.team.some(n=>n.toLowerCase()===t.responder_name.toLowerCase());}
 function isNew(t){
   if(!LAST_SEEN_TIMESTAMP) return false;
@@ -2282,16 +2286,6 @@ function applyFilters(){
   });
   return list;
 }
-
-function animateStatEl(id, val) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const prev = parseInt(el.textContent) || 0;
-  if (prev === val) return;
-  el.dataset.target = val;
-  countUp(el, val, 500);
-}
-
 function updateCounts(){
   // Only count active tickets (open=2, pending=3, hold=6) in sidebar and badges
   const ACTIVE = new Set([2, 3, 6]);
@@ -2314,17 +2308,16 @@ function updateCounts(){
   $("#cnt-prio-all").textContent = scoped.length;
   [1,2,3,4].forEach(p => $("#cnt-prio-"+p).textContent = scoped.filter(t => t.priority===p).length);
 
-  // Stats strip uses full filtered list (respects all filters including closed)
+  // Stats strip — animated countUp for the big numbers
   const visible = applyFilters();
-  $("#stat-breach").textContent = visible.filter(t=>t.due_by && new Date(t.due_by)<new Date()).length;
-  $("#stat-risk").textContent = visible.filter(t=>{
-    if(!t.due_by) return false;
-    const ms = new Date(t.due_by) - Date.now();
-    return ms>0 && ms < 4*3600000;
-  }).length;
-  $("#stat-high").textContent = visible.filter(t=>t.priority>=3).length;
-  $("#stat-unass").textContent = visible.filter(t=>!t.responder_name).length;
-  $("#stat-ai").textContent = visible.filter(t=>SUMMARIES.has(t.id)).length;
+  const statVals = {
+    'stat-breach': visible.filter(t=>t.due_by && new Date(t.due_by)<new Date()).length,
+    'stat-risk':   visible.filter(t=>{ if(!t.due_by) return false; const ms=new Date(t.due_by)-Date.now(); return ms>0&&ms<4*3600000; }).length,
+    'stat-high':   visible.filter(t=>t.priority>=3).length,
+    'stat-unass':  visible.filter(t=>!t.responder_name).length,
+    'stat-ai':     visible.filter(t=>SUMMARIES.has(t.id)).length,
+  };
+  Object.entries(statVals).forEach(([id,val]) => { const el=$(`#${id}`); if(el) countUp(el,val,400); });
   $("#stat-ai-sub").textContent = "of "+visible.length+" visible";
 
   // Standup badge: new ACTIVE tickets since last seen
@@ -2436,9 +2429,11 @@ function renderTicketCard(t){
   const slaAttr = t.due_by ? `data-sla="${t.due_by}"` : "";
 
   return `
-    <div class="ticket ${sel} ${newClass}" data-id="${t.id}"
+    <div class="ticket ${sel} ${newClass} ${{4:'prio-urgent',3:'prio-high',2:'prio-medium',1:'prio-low'}[t.priority]||''}" data-id="${t.id}"
       draggable="true"
-      class="ticket ${sel} ${newClass} ${{4:'prio-urgent',3:'prio-high',2:'prio-medium',1:'prio-low'}[t.priority]||''}" style="${ageStyle.bg ? `background:${ageStyle.bg}` : ''}"
+      style="${ageStyle.bg ? `background:${ageStyle.bg}` : ''}"
+      onmouseenter="showTicketHoverPreview(this,${t.id},event)"
+      onmouseleave="hideTicketHoverPreview()"
       ondragstart="event.dataTransfer.setData('ticketId','${t.id}')">
       <div class="ticket-check ${checked?"checked":""}"></div>
       <div class="ticket-body">
@@ -4380,12 +4375,7 @@ $("#resetSettingsBtn").addEventListener("click",()=>{
 // ============================================================
 
 // 1. PRIORITY COLOR LEFT-BORDER on ticket cards
-const PRIO_BORDER = { 4: "var(--danger)", 3: "var(--warn)", 2: "#fbbf24", 1: "transparent" };
-function applyPrioBorder(el, priority) {
-  el.style.borderLeft = `3px solid ${PRIO_BORDER[priority] || "transparent"}`;
-}
-
-// 2. TICKET AGE HEATMAP
+const PRIO_BORDER = { 4: "var(--danger)", 3: "var(--warn)", 2: "#fbbf24", 1: "transparent" };// 2. TICKET AGE HEATMAP
 function getAgeStyle(days) {
   if (days > 14) return { color: 'var(--sys-red)',    bg: 'rgba(255,69,58,0.04)',  cls: 'stale' };
   if (days > 7)  return { color: 'var(--sys-orange)', bg: 'rgba(255,159,10,0.03)', cls: 'aging' };
@@ -4427,15 +4417,7 @@ setInterval(() => {
 }, 30000);
 
 // 5. ANIMATED TICKET ARRIVAL
-let _prevTicketIds = new Set();
-function markNewTickets(tickets) {
-  const curr = new Set(tickets.map(t => t.id));
-  const newIds = new Set([...curr].filter(id => !_prevTicketIds.has(id)));
-  _prevTicketIds = curr;
-  return newIds;
-}
-
-// 6. SEARCH HIGHLIGHT
+let _prevTicketIds = new Set();// 6. SEARCH HIGHLIGHT
 function highlightText(text, query) {
   if (!query || query.length < 2) return escape(text);
   const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")})`, "gi");
@@ -4528,12 +4510,6 @@ document.addEventListener("keydown", e => {
 // ── Office Hours Mode ────────────────────────────────────────────────────────
 let _officeHoursMode = false;
 const OFFICE_HOURS = { start: 8, end: 18 }; // 8am-6pm
-
-function isInOfficeHours() {
-  const h = new Date().getHours();
-  return h >= OFFICE_HOURS.start && h < OFFICE_HOURS.end;
-}
-
 async function toggleOfficeHoursMode() {
   _officeHoursMode = !_officeHoursMode;
   await storeSet('office_hours_mode', _officeHoursMode ? 'true' : 'false');
@@ -5095,17 +5071,7 @@ document.getElementById("dep-confirm-btn")?.addEventListener("click", async () =
 });
 
 // Hook into mode tab switching for devices
-const _origModeSwitch = window._modeSwitch;
-document.querySelectorAll(".modetab").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const mode = btn.dataset.mode;
-    document.querySelectorAll(".modetab").forEach(b => b.classList.toggle("active", b === btn));
-    document.getElementById("mainTriage")?.classList.toggle("hidden", mode !== "triage");
-    document.getElementById("mainStandup")?.classList.toggle("hidden", mode !== "standup");
-    document.getElementById("mainPatterns")?.classList.toggle("hidden", mode !== "patterns");
-    document.getElementById("mainDevices")?.classList.toggle("hidden", mode !== "devices");
-  });
-});
+
 
 // Boot patch: add sparklines and drag-to-assign after DOM ready
 setTimeout(() => {
@@ -5152,17 +5118,6 @@ function merakiStatusBadge(status) {
     <span style="width:5px;height:5px;border-radius:50%;background:${s.dot};display:inline-block"></span>${s.label}
   </span>`;
 }
-
-function uplinkPerfBadge(perf) {
-  if (!perf) return "";
-  const loss = perf.avgLoss || 0;
-  const latency = perf.avgLatency || 0;
-  if (loss > 5 || latency > 100) return `<span style="color:var(--danger);font-size:10px;font-weight:700">⚠ ${loss}% loss · ${latency}ms</span>`;
-  if (loss > 1 || latency > 50) return `<span style="color:var(--warn);font-size:10px">${loss}% loss · ${latency}ms</span>`;
-  return `<span style="color:var(--ok);font-size:10px">✓ ${latency}ms</span>`;
-}
-
-
 async function loadNetwork() {
   const grid = document.getElementById("networkGrid");
   if (!grid) return;
@@ -5935,32 +5890,6 @@ document.getElementById("refreshNetworkBtn")?.addEventListener("click", () => {
 });
 
 // Extend mode tab switching to include network tab
-const _origTabSwitch = document.querySelectorAll(".modetab");
-document.querySelectorAll(".modetab").forEach(btn => {
-  // Remove old listeners by cloning (safer)
-  const clone = btn.cloneNode(true);
-  btn.parentNode.replaceChild(clone, btn);
-});
-document.querySelectorAll(".modetab").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const mode = btn.dataset.mode;
-    document.querySelectorAll(".modetab").forEach(b => b.classList.toggle("active", b === btn));
-    document.getElementById("mainTriage")?.classList.toggle("hidden", mode !== "triage");
-    document.getElementById("mainStandup")?.classList.toggle("hidden", mode !== "standup");
-    document.getElementById("mainPatterns")?.classList.toggle("hidden", mode !== "patterns");
-    document.getElementById("mainDevices")?.classList.toggle("hidden", mode !== "devices");
-    document.getElementById("mainNetwork")?.classList.toggle("hidden", mode !== "network");
-    document.getElementById("mainKb")?.classList.toggle("hidden", mode !== "kb");
-    document.getElementById("mainAnalytics")?.classList.toggle("hidden", mode !== "analytics");
-    document.getElementById("mainFleet")?.classList.toggle("hidden", mode !== "fleet");
-    if (mode === "standup") renderStandup();
-    if (mode === "devices" && !_retrieverData) loadDevices();
-    if (mode === "network" && !_merakiData) loadNetwork();
-    if (mode === "kb" && !_kbData) loadKB();
-    if (mode === "analytics") renderAnalytics();
-    if (mode === "fleet" && !_fleetData) loadFleet();
-  });
-});
 
 // ============================================================
 // BRAND DETECTION & MANAGEMENT
@@ -6311,38 +6240,12 @@ function showKBArticle(article) {
   openModal("kbArticleModal");
 }
 
-// Auto-extract KB from ticket when resolving
-async function extractKBFromTicket(ticketId) {
-  try {
-    const res = await fetch("/api/knowledgeBase", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "extract", ticketId })
-    });
-    const data = await res.json();
-    if (data.extracted) return data.extracted;
-  } catch(e) {}
-  return null;
-}
-
-// KB refresh button
+// Auto-extract KB from ticket when resolving// KB refresh button
 document.getElementById("refreshKbBtn")?.addEventListener("click", () => { _kbData = null; loadKB(); });
 
 // ============================================================
 // ANALYTICS — Brand attribution & business impact
-// ============================================================
-const BRAND_COLORS = {
-  "American Tin Ceilings": "#6366f1",
-  "Baseboarders": "#34d399",
-  "Vent Covers Unlimited": "#f59e0b",
-  "Madelyn Carter": "#ec4899",
-  "Trueform Concrete": "#8b5cf6",
-  "RTA Cabinet Store": "#f97316",
-  "Reggio Registers": "#14b8a6",
-  "Hearth Brands": "#ef4444",
-  "Renovation Brands": "#60a5fa",
-  "Unknown": "#4a5370"
-};
+// ============================================================;
 
 const BUSINESS_IMPACT_WEIGHTS = {
   category: { "NetSuite": 3, "Network": 2, "Employee Onboarding/Offboarding": 2, "Software": 1, "Hardware": 1 },
@@ -6628,13 +6531,6 @@ async function loadRunbooks() {
     MDM_RUNBOOKS.forEach(r => { if (!existingIds.has(r.id)) _runbooks.push(r); });
   }
 }
-
-function getRunbooksForTicket(ticket) {
-  return _runbooks.filter(r =>
-    !ticket.category || r.categories.includes(ticket.category) || r.categories.includes("Software")
-  );
-}
-
 function renderRunbooksPanel(ticket) {
   const suggested = _runbooks.filter(r => r.categories.includes(ticket.category));
   const allRunbooks = _runbooks.slice(0, 4);
@@ -6993,11 +6889,6 @@ function renderFleetList() {
   }
 }
 
-function filterFleetDevices(filter) {
-  _fleetFilter = filter;
-  _fleetPage = 0;
-  renderFleetList();
-}
 
 let _fleetSelection = new Set();
 
@@ -7332,9 +7223,13 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
                 ? `<div style="font-size:10px;color:var(--ink-ghost)">Last: ${new Date(s.lastConnected).toLocaleString()}</div>`
                 : ""}
           </div>
-          ${s.launchUrl ? `<a href="${s.launchUrl}" target="_blank" class="btn primary"
-            style="font-size:11px;padding:4px 10px;text-decoration:none"
-            onclick="_scSessionStart.set('${ticketId}_${escape(s.name||s.sessionId)}', new Date())">🖥️ Connect</a>` : ""}
+          <div style="display:flex;gap:5px;margin-top:5px">
+            ${s.launchUrl ? `<a href="${s.launchUrl}" target="_blank" class="btn primary"
+              style="font-size:11px;padding:4px 10px;text-decoration:none"
+              onclick="_scSessionStart.set('${ticketId}_${escape(s.name||s.sessionId)}',new Date())">🖥️ Connect</a>` : ""}
+            <button class="btn ghost" style="font-size:10px;padding:3px 8px;border-radius:var(--r-full)"
+              onclick="logSCSession(${ticketId},'${escape(s.name||s.sessionId)}')">📝 Log</button>
+          </div>
         </div>
       `).join("")}
     `);
@@ -7850,32 +7745,7 @@ const MDM_RUNBOOKS = [
 ];
 
 // Patch MDM runbooks into the runbook execution engine
-const _origRunStep = window._runStep;
-async function executeMdmRunbookStep(stepId, params, ticketId) {
-  const email = params.email;
-  switch(stepId) {
-    case "find-mac": {
-      if (!email) return { ok: false, message: "No email found on ticket" };
-      const res = await fetch(`/api/kandji?action=device&email=${encodeURIComponent(email)}`);
-      const data = await res.json();
-      if (!data.found) return { ok: false, message: `No Mac found for ${email} in Kandji` };
-      return { ok: true, message: `Found: ${data.device.device_name} (${data.device.serial_number})`, data: { deviceId: data.device.device_id, deviceName: data.device.device_name } };
-    }
-    case "send-checkin":
-      await fetch("/api/kandji", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"checkin", deviceId: params.deviceId }) });
-      return { ok: true, message: `Check-in command sent to ${params.deviceName}` };
-    case "send-lock":
-      await fetch("/api/kandji", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"lock", deviceId: params.deviceId }) });
-      return { ok: true, message: `Lock command sent to ${params.deviceName}` };
-    case "send-wipe":
-      await fetch("/api/kandji", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"wipe", deviceId: params.deviceId }) });
-      return { ok: true, message: `Wipe command sent to ${params.deviceName} — device will erase on next connection` };
-    default:
-      return null; // fall through to regular runbook engine
-  }
-}
-
-// MDM runbooks are merged in via loadRunbooks override below
+const _origRunStep = window._runStep;// MDM runbooks are merged in via loadRunbooks override below
 // Mac Fleet tab mode switch
 document.querySelector('[data-mode="fleet"]')?.addEventListener("click", () => {
   if (!_fleetData) loadFleet();
@@ -8316,6 +8186,3 @@ setInterval(updateClock,1000); updateClock();
   // Auto-refresh every 60 seconds
   setInterval(()=>fetchTickets({silent:true}), 60000);
 })();
-</script>
-</body>
-</html>
