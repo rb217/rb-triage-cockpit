@@ -1,4 +1,4 @@
-const { getPrincipal, isInItTeam, fsUpdateTicket, fsGetAgentMap, fsRequest } = require("../shared/clients");
+const { getPrincipal, isInItTeam, fsUpdateTicket, fsGetAgentMap, fsRequest, fsAddNote } = require("../shared/clients");
 const PRIO_NAME_TO_NUM = { Low:1, Medium:2, High:3, Urgent:4 };
 const STATUS_NAME_TO_NUM = { Open:2, Pending:3, Resolved:4, Closed:5, Hold:6 };
 
@@ -7,6 +7,19 @@ module.exports = async function(context, req) {
   if (!isInItTeam(principal)) { context.res = { status: 403, body: { error: "Not authorized" } }; return; }
 
   const body = req.body || {};
+
+  // ── Private note ─────────────────────────────────────────────────────────
+  if (body.action === "add_note") {
+    const { ticketId, body: noteBody, private: isPrivate = true } = body;
+    if (!ticketId || !noteBody) { context.res = { status: 400, body: { error: "ticketId and body required" } }; return; }
+    try {
+      await fsAddNote(ticketId, noteBody, isPrivate);
+      context.res = { body: { ok: true } };
+    } catch(err) {
+      context.res = { status: 500, body: { error: err.message } };
+    }
+    return;
+  }
 
   // ── Incident creation ───────────────────────────────────────────────────────
   if (body.action === "create_incident") {
