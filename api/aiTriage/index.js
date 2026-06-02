@@ -60,6 +60,38 @@ module.exports = async function(context, req) {
   const body = req.body || {};
 
   // ── New action-based handlers ─────────────────────────────────────────────
+  if (body.action === "teams_send") {
+    const { message, recipient, ticketId, ticketSubject } = body;
+    try {
+      const { postTeamsCard } = require("../shared/clients");
+      const card = {
+        type: "message",
+        attachments: [{
+          contentType: "application/vnd.microsoft.card.adaptive",
+          content: {
+            type: "AdaptiveCard",
+            version: "1.4",
+            body: [
+              { type: "TextBlock", text: recipient ? `📨 Hand-off to ${recipient}` : "📨 IT Team Hand-off", weight: "Bolder", size: "Medium" },
+              ...(ticketSubject ? [{ type: "TextBlock", text: "Ticket: " + ticketSubject, isSubtle: true, wrap: true }] : []),
+              { type: "TextBlock", text: message, wrap: true }
+            ],
+            actions: ticketId ? [{
+              type: "Action.OpenUrl",
+              title: "View Ticket #" + ticketId,
+              url: "https://renovationbrands.freshservice.com/a/tickets/" + ticketId
+            }] : []
+          }
+        }]
+      };
+      await postTeamsCard(card);
+      context.res = { body: { ok: true } };
+    } catch(err) {
+      context.res = { status: 500, body: { error: err.message } };
+    }
+    return;
+  }
+
   if (body.action === "morning_brief") {
     const { tickets, stats, agentName } = body;
     try {
@@ -114,6 +146,27 @@ If no articles are relevant, return {"answer":"I couldn't find a specific articl
       context.res = { body: { result: parseJsonResponse(raw) } };
     } catch(err) {
       context.res = { status: 500, body: { error: err.message } };
+    }
+    return;
+  }
+
+  if (body.action === 'thread_sentiment') {
+    const { messages, ticketId } = body;
+    if (!messages?.length) { context.res = { body: { sentiment: 'neutral' } }; return; }
+    try {
+      const prompt = `Analyse the tone/sentiment of these requester messages in a support ticket. Return ONLY JSON.
+
+Messages (oldest to newest):
+${messages.map((m,i)=>`[${i+1}] ${m}`).join('\n')}
+
+Classify the overall sentiment trend: frustrated, impatient, neutral, satisfied, relieved.
+Also note if it's ESCALATING (getting worse) or IMPROVING.
+
+Return: {"sentiment":"<frustrated|impatient|neutral|satisfied|relieved>","trend":"<escalating|stable|improving>","note":"<one short phrase, max 6 words>"}`;
+      const raw = await callClaude(prompt, { maxTokens: 100 });
+      context.res = { body: parseJsonResponse(raw) };
+    } catch(err) {
+      context.res = { body: { sentiment: 'neutral', note: '' } };
     }
     return;
   }
