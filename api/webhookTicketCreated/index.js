@@ -1,4 +1,4 @@
-const { getSecret, fsGetTicket, fsUpdateTicket, fsAddNote, fsFindAgentByName, callClaude, parseJsonResponse } = require("../shared/clients");
+const { getSecret, fsGetTicket, fsUpdateTicket, fsAddNote, fsFindAgentByName, callClaude, parseJsonResponse, postTeamsCard } = require("../shared/clients");
 const { getFullUserContext } = require("../shared/graph");
 const THRESHOLD = 70;
 const PRIO_MAP = {1:"Low",2:"Medium",3:"High",4:"Urgent"};
@@ -25,5 +25,24 @@ module.exports = async function(context, req) {
   if(Object.keys(updates).length) try{await fsUpdateTicket(ticketId,updates);}catch(e){}
   const note=`[🤖 AI Triage]\n${triage.reasoning}\n\n${applied.length?"Applied:\n"+applied.map(a=>"✓ "+a).join("\n"):""}\n${skipped.length?"\nBelow threshold:\n"+skipped.map(s=>"• "+s).join("\n"):""}`;
   try{await fsAddNote(ticketId,note,true);}catch(e){}
+
+  // Post to Teams for high-priority tickets
+  const finalPriority = updates.priority || ticket.priority;
+  if (finalPriority >= 3) {
+    try {
+      await postTeamsCard({
+        title: `${finalPriority === 4 ? '🚨 URGENT' : '🔴 HIGH'} New Ticket #${ticketId}`,
+        text: ticket.subject,
+        facts: [
+          { name: 'Requester', value: ticket.requester?.name || 'Unknown' },
+          { name: 'Category', value: triage.category || ticket.category || '—' },
+          { name: 'Assigned', value: triage.assignee || 'Unassigned' },
+          { name: 'AI Reasoning', value: triage.reasoning || '—' },
+        ],
+        url: `https://renovationbrands.freshservice.com/a/tickets/${ticketId}`
+      });
+    } catch(e) { context.log.warn('Teams notification failed:', e.message); }
+  }
+
   context.res={status:200,body:{ticketId,applied,skipped}};
 };
