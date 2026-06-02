@@ -2081,15 +2081,15 @@ function isNew(t){
 async function logSCSession(ticketId, sessionName) {
   const now = new Date().toLocaleString();
   const agent = ME?.name || ME?.email || 'IT Team';
-  const note = `[🖥️ ScreenConnect Session]\nSession: ${sessionName}\nInitiated by: ${agent}\nTime: ${now}`;
+  const note = `🖥️ ScreenConnect session initiated\nSession: ${sessionName}\nBy: ${agent}\nAt: ${now}`;
   try {
-    const res = await fetch('/api/replySend', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ ticketId, body: note, private: true })
+    const res = await fetch('/api/applyChanges', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ action: 'add_note', ticketId, body: note, private: true })
     });
-    if(res.ok) { toast('✓ Session logged to ticket', 'info'); playSuccessChime(); }
-    else throw new Error(await res.text());
-  } catch(e) { toast('✗ Log failed: '+e.message, 'error'); }
+    if (res.ok) { toast('✓ Session logged to ticket', 'info'); playSuccessChime(); }
+    else throw new Error(`${res.status}`);
+  } catch(e) { toast('✗ Log failed: ' + e.message, 'error'); }
 }
 
 // ── Hover Preview ────────────────────────────────────────────
@@ -2272,7 +2272,19 @@ function renderList(){
   const list = applyFilters();
   const host = $("#ticketList");
   if(!list.length){
-    host.innerHTML = `<div class="empty-state" style="padding:80px 20px"><div class="big">No matches</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase">Adjust filters or load data</div></div>`;
+    host.innerHTML = `
+      <div style="text-align:center;padding:70px 20px">
+        <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" style="opacity:.18;margin-bottom:14px">
+          <rect x="6" y="10" width="44" height="5" rx="2.5" fill="currentColor"/>
+          <rect x="6" y="22" width="32" height="4" rx="2" fill="currentColor"/>
+          <rect x="6" y="33" width="38" height="4" rx="2" fill="currentColor"/>
+          <circle cx="40" cy="38" r="13" stroke="currentColor" stroke-width="2.5" fill="none"/>
+          <line x1="49.5" y1="47.5" x2="55" y2="53" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <div style="font-size:16px;font-weight:600;color:var(--label-2);letter-spacing:-0.2px">No matches</div>
+        <div style="font-size:12px;color:var(--label-3);margin-top:5px">Try adjusting your filters or search</div>
+        <button class="btn ghost" style="margin-top:14px;font-size:12px;border-radius:var(--r-full)" onclick="FILTERS.search='';FILTERS.scope='all';FILTERS.prio='all';FILTERS.status='all';document.getElementById('searchInput').value='';renderList()">Clear all filters</button>
+      </div>`;
     return;
   }
 
@@ -3478,7 +3490,7 @@ async function renderStandup(){
           {name:"Steve Mitchell", initials:"SM", count:steveOpen,       color:"var(--sys-green)"},
           {name:"Eric Hnatov",    initials:"EH", count:ericOpen,        color:"var(--sys-orange)"},
         ].map(a=>`
-          <div class="standup-row" style="cursor:pointer" onclick="switchMode('triage');FILTERS.scope='all';const sb=document.getElementById('ticketSearch');if(sb){sb.value='${a.name}';FILTERS.search='${a.name}';}renderList();updateCounts()"
+          <div class="standup-row" style="cursor:pointer" onclick="switchMode('triage');FILTERS.scope='all';const sb=document.getElementById('searchInput');if(sb){sb.value='${a.name}';FILTERS.search='${a.name}';}renderList();updateCounts()"
             onmouseover="this.style.background='var(--fill-secondary)'"
             onmouseout="this.style.background='transparent'">
             <span class="lbl" style="display:flex;align-items:center;gap:8px">
@@ -7140,6 +7152,72 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
 }
 
 // ============================================================
+// MERAKI TICKET CONTEXT — auto-correlate Network tickets
+// ============================================================
+async function loadMerakiTicketContext(ticketId, ticket) {
+  const host = document.getElementById(`merakiCtx_${ticketId}`);
+  if (!host) return;
+
+  // Try to match this ticket's brand/email to a Meraki network
+  const email = ticket.requester_email || ticket.email || "";
+  const domain = email.split("@")[1]?.toLowerCase() || "";
+
+  // Map known domains to site names for Meraki correlation
+  const DOMAIN_TO_SITE = {
+    "americantinceiling.com":   "American Tin Ceilings",
+    "baseboarders.com":         "Baseboarders",
+    "ventcoversunlimited.com":  "Vent Covers Unlimited",
+    "madelyncarter.com":        "Madelyn Carter",
+    "trueformconcrete.com":     "Trueform Concrete",
+    "rtacabinetstore.com":      "RTA Cabinet Store",
+    "reggioregister.com":       "Reggio Registers",
+    "hearthbrands.com":         "Hearth Brands",
+  };
+
+  const siteName = DOMAIN_TO_SITE[domain];
+
+  try {
+    const res = await fetch("/api/merakiContext?type=overview");
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    const networks = data.networks || [];
+
+    // Find matching network by site name
+    const matched = siteName
+      ? networks.filter(n => n.name?.toLowerCase().includes(siteName.toLowerCase()))
+      : [];
+
+    if (!matched.length && !siteName) {
+      host.innerHTML = `<div style="font-size:11px;color:var(--label-3)">Open the <button class="btn ghost" style="font-size:11px;padding:2px 6px;border-radius:var(--r-full)" onclick="switchMode('network')">Network tab</button> to check site status.</div>`;
+      return;
+    }
+
+    if (!matched.length) {
+      host.innerHTML = `<div style="font-size:11px;color:var(--label-3)">No Meraki network found for ${escape(siteName)}.</div>`;
+      return;
+    }
+
+    const n = matched[0];
+    const hasAlerts = n.alerts?.length > 0;
+    host.innerHTML = `
+      <div style="background:var(--surface-2);border:0.5px solid ${hasAlerts?'rgba(255,69,58,0.3)':'var(--sep)'};border-radius:var(--r-md);padding:9px 11px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-size:12.5px;font-weight:600;color:var(--label)">${escape(n.name)}</div>
+          ${merakiStatusBadge(n.status || "unknown")}
+        </div>
+        ${hasAlerts ? `<div style="font-size:11px;color:var(--sys-red);margin-bottom:6px">⚠ ${n.alerts.length} active alert${n.alerts.length>1?"s":""}: ${n.alerts.slice(0,2).map(a=>escape(a)).join(", ")}</div>` : `<div style="font-size:11px;color:var(--sys-green);margin-bottom:6px">✓ No active alerts</div>`}
+        <button class="btn ghost" style="font-size:10px;padding:3px 8px;border-radius:var(--r-full)"
+          onclick="switchMode('network');setTimeout(()=>loadNetworkDrillDown('${n.id}','${escape(n.name)}'),400)">
+          View network details ↗
+        </button>
+      </div>
+    `;
+  } catch(e) {
+    host.innerHTML = `<div style="font-size:11px;color:var(--label-3)">Network context unavailable: ${e.message}</div>`;
+  }
+}
+
+// ============================================================
 // TICKET ACTIVITY TIMELINE
 // ============================================================
 const _timelineLoaded = new Set();
@@ -7372,32 +7450,24 @@ async function loadRetrieverTicketContext(ticketId, email, requesterName) {
 }
 
 function showRetrieverDeployModal(ticketId, requesterName, requesterEmail) {
-  // Pre-fill the existing deploy modal with ticket context
-  const modal = document.getElementById("deployModal");
-  if (!modal) return;
-  const nameEl = document.getElementById("dep-emp-name");
-  const emailEl = document.getElementById("dep-emp-email");
-  const tidEl = document.getElementById("dep-ticket-id");
-  if (nameEl) nameEl.value = requesterName || "";
+  const nameEl  = document.getElementById("dep-name");
+  const emailEl = document.getElementById("dep-email");
+  const tidEl   = document.getElementById("dep-ticket");
+  if (nameEl)  nameEl.value  = requesterName  || "";
   if (emailEl) emailEl.value = requesterEmail || "";
-  if (tidEl) tidEl.value = ticketId || "";
+  if (tidEl)   tidEl.value   = String(ticketId || "");
   openModal("deployModal");
 }
 
 function showRetrieverReturnModal(ticketId, requesterName, requesterEmail, deviceType, serial) {
-  // Pre-fill the existing return modal with ticket context
-  const modal = document.getElementById("returnModal");
-  if (!modal) return;
-  const nameEl = document.getElementById("ret-emp-name");
-  const emailEl = document.getElementById("ret-emp-email");
-  const tidEl = document.getElementById("ret-ticket-id");
-  const devEl = document.getElementById("ret-device");
-  const snEl = document.getElementById("ret-serial");
-  if (nameEl) nameEl.value = requesterName || "";
+  const nameEl   = document.getElementById("ret-name");
+  const emailEl  = document.getElementById("ret-email");
+  const tidEl    = document.getElementById("ret-ticket");
+  const snEl     = document.getElementById("ret-serial");
+  if (nameEl)  nameEl.value  = requesterName  || "";
   if (emailEl) emailEl.value = requesterEmail || "";
-  if (tidEl) tidEl.value = ticketId || "";
-  if (devEl) devEl.value = deviceType || "laptop";
-  if (snEl) snEl.value = serial || "";
+  if (tidEl)   tidEl.value   = String(ticketId || "");
+  if (snEl)    snEl.value    = serial         || "";
   openModal("returnModal");
 }
 
