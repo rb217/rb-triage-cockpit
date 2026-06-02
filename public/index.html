@@ -4986,18 +4986,21 @@ const DEVICE_TYPE_LABEL = { appliance: "Firewall/MX", switch: "Switch", wireless
 
 function merakiStatusBadge(status) {
   const map = {
-    online:     { color: "var(--sys-green)",  bg: "rgba(48,209,88,0.10)",     dot: "#34d399", label: "ONLINE" },
-    offline:    { color: "var(--sys-red)",    bg: "rgba(255,69,58,0.10)", dot: "#f87171", label: "OFFLINE" },
-    alerting:   { color: "var(--sys-orange)", bg: "rgba(255,159,10,0.10)",   dot: "#fb923c", label: "ALERTING" },
-    dormant:    { color: "var(--ink-dim)", bg: "rgba(255,255,255,0.04)", dot: "#3a4460", label: "DORMANT" },
-    active:     { color: "var(--ok)",      bg: "var(--ok-dim)",     dot: "#34d399", label: "ACTIVE" },
-    failed:     { color: "var(--danger)",  bg: "var(--danger-dim)", dot: "#f87171", label: "FAILED" },
-    connecting: { color: "var(--warn)",    bg: "var(--warn-dim)",   dot: "#fb923c", label: "CONNECTING" },
-    reachable:  { color: "var(--ok)",      bg: "var(--ok-dim)",     dot: "#34d399", label: "REACHABLE" },
-    unreachable:{ color: "var(--danger)",  bg: "var(--danger-dim)", dot: "#f87171", label: "UNREACHABLE" },
+    online:         { color: "var(--sys-green)",  bg: "rgba(48,209,88,0.10)",   dot: "#34d399", label: "ONLINE" },
+    offline:        { color: "var(--sys-red)",    bg: "rgba(255,69,58,0.10)",   dot: "#f87171", label: "OFFLINE" },
+    alerting:       { color: "var(--sys-orange)", bg: "rgba(255,159,10,0.10)",  dot: "#fb923c", label: "ALERTING" },
+    dormant:        { color: "var(--label-2)",    bg: "rgba(255,255,255,0.04)", dot: "#3a4460", label: "DORMANT" },
+    // WAN uplink statuses
+    active:         { color: "var(--sys-green)",  bg: "rgba(48,209,88,0.10)",   dot: "#34d399", label: "ACTIVE" },
+    ready:          { color: "var(--sys-cyan)",   bg: "rgba(100,210,255,0.10)", dot: "#64d2ff", label: "READY" },
+    "not connected":{ color: "var(--sys-red)",    bg: "rgba(255,69,58,0.10)",   dot: "#f87171", label: "NOT CONNECTED" },
+    failed:         { color: "var(--sys-red)",    bg: "rgba(255,69,58,0.10)",   dot: "#f87171", label: "FAILED" },
+    connecting:     { color: "var(--sys-orange)", bg: "rgba(255,159,10,0.10)",  dot: "#fb923c", label: "CONNECTING" },
+    reachable:      { color: "var(--sys-green)",  bg: "rgba(48,209,88,0.10)",   dot: "#34d399", label: "REACHABLE" },
+    unreachable:    { color: "var(--sys-red)",    bg: "rgba(255,69,58,0.10)",   dot: "#f87171", label: "UNREACHABLE" },
   };
-  const s = map[(status||"").toLowerCase()] || { color: "var(--ink-dim)", bg: "rgba(255,255,255,0.05)", dot: "#3a4460", label: (status||"UNKNOWN").toUpperCase() };
-  return `<span style="background:${s.bg};color:${s.color};padding:2px 8px;border-radius:20px;font-size:9.5px;font-weight:700;letter-spacing:0.5px;display:inline-flex;align-items:center;gap:4px">
+  const s = map[(status||"").toLowerCase()] || { color: "var(--label-2)", bg: "rgba(255,255,255,0.05)", dot: "#3a4460", label: (status||"UNKNOWN").toUpperCase() };
+  return `<span style="background:${s.bg};color:${s.color};padding:2px 8px;border-radius:var(--r-full);font-size:9.5px;font-weight:700;letter-spacing:0.5px;display:inline-flex;align-items:center;gap:4px">
     <span style="width:5px;height:5px;border-radius:50%;background:${s.dot};display:inline-block"></span>${s.label}
   </span>`;
 }
@@ -5095,7 +5098,12 @@ function renderNetworkGrid(networks) {
     const isSelected = _selectedNetworkId === n.networkId;
 
     const deviceRows = n.devices.slice(0, 6).map(d => {
-      const hasDegradedUplink = (d.uplinks||[]).some(u => u.status !== "active");
+      const HEALTHY_UPLINK = new Set(['active', 'ready', 'reachable', 'online']);
+      const hasDegradedUplink = (d.uplinks||[]).some(u => u.status && !HEALTHY_UPLINK.has(u.status.toLowerCase()));
+      // Active = carrying traffic, ready = healthy standby — both count as healthy
+      const activeWans = (d.uplinks||[]).filter(u => u.status?.toLowerCase() === 'active').length;
+      const readyWans  = (d.uplinks||[]).filter(u => u.status?.toLowerCase() === 'ready').length;
+      const totalWans  = (d.uplinks||[]).length;
       return `
         <div onclick="drillDownNetwork('${n.networkId}','${escape(n.networkName)}')"
           style="display:grid;grid-template-columns:18px 1fr auto auto;gap:8px;align-items:center;padding:6px 8px;border-radius:var(--radius-sm);cursor:pointer;transition:.12s"
@@ -5106,8 +5114,12 @@ function renderNetworkGrid(networks) {
             <div style="font-size:10px;color:var(--ink-ghost)">${d.model||""}</div>
           </div>
           ${d.productType==="appliance" && d.uplinks?.length ? `
-            <div style="font-size:10px;color:${hasDegradedUplink?"var(--danger)":"var(--ink-dim)"}">
-              ${d.uplinks.filter(u=>u.status==="active").length}/${d.uplinks.length} WAN
+            <div style="font-size:10px;color:${hasDegradedUplink?"var(--sys-red)":"var(--label-2)"}">
+              ${hasDegradedUplink
+                ? `⚠ ${activeWans}/${totalWans} WAN`
+                : readyWans > 0
+                  ? `${activeWans} active · ${readyWans} standby`
+                  : `${activeWans}/${totalWans} WAN`}
             </div>` : `<div></div>`}
           ${merakiStatusBadge(d.status)}
         </div>
@@ -5226,14 +5238,20 @@ function renderDrillDown(data) {
               ${d.lanIp ? `<div style="font-size:10px;color:var(--ink-ghost);margin-bottom:4px;font-family:var(--mono)">${d.lanIp}</div>` : ""}
               ${uplinks.map(u => {
                 const p = perf[u.interface] || {};
-                const perfColor = p.degraded ? "var(--warn)" : "var(--ok)";
+                const perfColor = p.degraded ? "var(--sys-orange)" : "var(--sys-green)";
+                const isActive = u.status?.toLowerCase() === 'active';
+                const isReady  = u.status?.toLowerCase() === 'ready';
+                const roleLabel = isActive ? 'PRIMARY' : isReady ? 'STANDBY' : '';
+                const roleColor = isActive ? 'var(--sys-green)' : isReady ? 'var(--sys-cyan)' : 'var(--label-3)';
                 return `
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;padding:4px 6px;background:var(--panel);border-radius:4px;font-size:10px">
-                    <span style="color:var(--ink-dim);font-weight:700;min-width:40px">${(u.interface||"").toUpperCase()}</span>
-                    <span style="color:var(--ink-dim);font-family:var(--mono)">${u.ip||"—"}</span>
-                    <span style="color:var(--ink-ghost)">${u.provider||""}</span>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;padding:5px 8px;background:var(--fill-quaternary);border-radius:var(--r-sm);font-size:10.5px">
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span style="color:var(--label-2);font-weight:700;min-width:36px">${(u.interface||"").toUpperCase()}</span>
+                      ${roleLabel ? `<span style="font-size:8.5px;font-weight:700;color:${roleColor};background:${roleColor}18;padding:1px 5px;border-radius:var(--r-full)">${roleLabel}</span>` : ''}
+                    </div>
+                    <span style="color:var(--label-2);font-family:var(--mono);font-size:10px">${u.ip||"—"}</span>
                     ${merakiStatusBadge(u.status)}
-                    ${p.avgLatency ? `<span style="color:${perfColor};font-weight:600">${p.avgLatency}ms ${p.avgLoss?p.avgLoss+"%loss":""}</span>` : ""}
+                    ${p.avgLatency ? `<span style="color:${perfColor};font-weight:600">${p.avgLatency}ms${p.avgLoss?" · "+p.avgLoss+"%":""}</span>` : ""}
                   </div>
                 `;
               }).join("")}
@@ -5370,15 +5388,35 @@ function renderDeviceDetailModalBasic(device, networkName) {
       `).join("")}
     </div>
     ${device.uplinks?.length ? `
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-ghost);margin-bottom:6px">WAN Uplinks</div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--label-3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+        <span>WAN Uplinks</span>
+        <span style="font-size:10px;color:var(--label-3);text-transform:none;font-weight:400;letter-spacing:0">
+          ${device.uplinks.filter(u=>u.status?.toLowerCase()==='active').length} active · ${device.uplinks.filter(u=>u.status?.toLowerCase()==='ready').length} standby
+        </span>
+      </div>
       ${device.uplinks.map(u => {
         const p = perf[u.interface] || {};
-        return `<div style="background:var(--panel-2);border-radius:var(--radius-sm);padding:7px 10px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;font-size:12px">
-          <span style="font-weight:700">${(u.interface||"").toUpperCase()}</span>
-          <span style="font-family:var(--mono);color:var(--ink-dim)">${u.ip||"—"}</span>
-          <span style="color:var(--ink-ghost)">${u.provider||""}</span>
-          ${merakiStatusBadge(u.status)}
-          ${p.avgLatency ? `<span style="color:${p.degraded?"var(--warn)":"var(--ok)"}">${p.avgLatency}ms</span>` : ""}
+        const isActive  = u.status?.toLowerCase() === 'active';
+        const isReady   = u.status?.toLowerCase() === 'ready';
+        const isBad     = !isActive && !isReady && u.status;
+        const roleLabel = isActive ? 'PRIMARY' : isReady ? 'STANDBY' : '';
+        const roleColor = isActive ? 'var(--sys-green)' : isReady ? 'var(--sys-cyan)' : 'var(--label-3)';
+        return `<div style="background:var(--surface-2);border:0.5px solid ${isBad?'rgba(255,69,58,0.3)':'var(--sep)'};border-radius:var(--r-md);padding:9px 12px;margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${p.avgLatency?'6px':'0'}">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-weight:700;font-size:12.5px;color:var(--label)">${(u.interface||"").toUpperCase()}</span>
+              ${roleLabel ? `<span style="font-size:9px;font-weight:700;background:${roleColor}18;color:${roleColor};padding:1px 7px;border-radius:var(--r-full)">${roleLabel}</span>` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-family:var(--mono);color:var(--label-2);font-size:11px">${u.ip||"—"}</span>
+              ${merakiStatusBadge(u.status)}
+            </div>
+          </div>
+          ${p.avgLatency ? `<div style="display:flex;gap:12px;font-size:11px;color:var(--label-2);margin-top:4px">
+            <span>Latency: <strong style="color:${p.degraded?'var(--sys-orange)':'var(--label)'}">${p.avgLatency}ms</strong></span>
+            ${p.avgLoss ? `<span>Loss: <strong style="color:var(--sys-red)">${p.avgLoss}%</strong></span>` : ''}
+            ${u.provider ? `<span style="color:var(--label-3)">${u.provider}</span>` : ''}
+          </div>` : u.provider ? `<div style="font-size:11px;color:var(--label-3);margin-top:3px">${u.provider}</div>` : ''}
         </div>`;
       }).join("")}
     ` : ""}
