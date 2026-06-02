@@ -1807,8 +1807,11 @@
       <div class="teams-output" id="teamsOutput">Select a recipient above to generate the message.</div>
     </div>
     <div class="modal-ft">
-      <div class="hint">Teams markdown · paste anywhere</div>
-      <button class="btn primary" id="copyTeamsBtn">Copy to clipboard</button>
+      <div class="hint">Teams markdown · send or copy</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="copyTeamsBtn">⎘ Copy</button>
+        <button class="btn primary" id="sendTeamsBtn" style="background:var(--teams);border-color:var(--teams)">↗ Send to Teams</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2078,10 +2081,80 @@ function isNew(t){
   return new Date(t.created_at) > new Date(LAST_SEEN_TIMESTAMP);
 }
 
+function viewRequesterHistory(email, name) {
+  // Switch to triage tab, set search to requester name/email
+  switchMode('triage');
+  FILTERS.scope = 'all';
+  FILTERS.search = name || email;
+  const sb = document.getElementById('searchInput');
+  if (sb) sb.value = name || email;
+  renderList();
+  updateCounts();
+  toast('Showing tickets from ' + (name || email), 'info');
+}
+
+async function createKBFromTicket(ticketId, subject) {
+  toast("🧠 Extracting resolution…", "info");
+  try {
+    // Step 1: Extract via AI
+    const extractRes = await fetch("/api/knowledgeBase", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ action: "extract", ticketId })
+    });
+    if (!extractRes.ok) throw new Error("Extraction failed: " + extractRes.status);
+    const { extracted } = await extractRes.json();
+
+    // Step 2: Build article HTML  
+    const description = `<h2>Problem</h2>
+<p>${extracted.problem_summary || ""}</p>
+<h2>Root Cause</h2>
+<p>${extracted.root_cause || ""}</p>
+<h2>Resolution</h2>
+<ol>${(extracted.resolution_steps||[]).map(s=>`<li>${s}</li>`).join("")}</ol>
+${extracted.deflection_hint ? `<h2>Self-Service Option</h2><p>${extracted.deflection_hint}</p>` : ""}`;
+
+    // Step 3: Create draft article
+    const createRes = await fetch("/api/knowledgeBase", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        action: "create",
+        title: extracted.title || subject,
+        description,
+        tags: extracted.tags || [],
+        article_type: 1
+      })
+    });
+    if (!createRes.ok) throw new Error("Create failed: " + createRes.status);
+    const { article } = await createRes.json();
+
+    toast("✓ KB draft created — review in Knowledge Base tab", "info");
+    playSuccessChime();
+
+    // Add note to ticket
+    await fetch("/api/applyChanges", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        action: "add_note",
+        ticketId,
+        body: `[🧠 KB Article Created]\nTitle: ${extracted.title||subject}\nArticle ID: ${article?.id||"draft"}\nStatus: Draft — pending review before publishing`,
+        private: true
+      })
+    }).catch(()=>{});
+  } catch(e) {
+    toast("✗ KB creation failed: " + e.message, "error");
+  }
+}
+
+const _scSessionStart = new Map();
+
 async function logSCSession(ticketId, sessionName) {
-  const now = new Date().toLocaleString();
+  const startTime = _scSessionStart.get(ticketId + '_' + sessionName) || null;
+  const now = new Date();
+  const durationStr = startTime
+    ? (() => { const mins = Math.round((now - startTime) / 60000); return mins > 0 ? ` · Duration: ~${mins} min` : ''; })()
+    : '';
   const agent = ME?.name || ME?.email || 'IT Team';
-  const note = `🖥️ ScreenConnect session initiated\nSession: ${sessionName}\nBy: ${agent}\nAt: ${now}`;
+  const note = `🖥️ ScreenConnect session${durationStr ? ' ended' : ' initiated'}\nSession: ${sessionName}\nBy: ${agent}\nStarted: ${startTime ? startTime.toLocaleString() : now.toLocaleString()}${durationStr}`;
   try {
     const res = await fetch('/api/applyChanges', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -2653,14 +2726,16 @@ function renderDetail(){
     ${renderRunbooksPanel(t)}
 
     <div class="detail-section">
-      <h3>Quick actions</h3>
+      <h3>Quick Actions</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
         <button class="btn" data-action="set-pending">Set Pending</button>
-        <button class="btn" data-action="resolve">Resolve</button>
+        <button class="btn" data-action="resolve">✓ Resolve</button>
         <button class="btn" data-action="close">Close</button>
-        <button class="btn" data-action="teams" style="grid-column:span 2;border-color:var(--teams);color:var(--teams)">↳ Hand off in Teams</button>
+        <button class="btn" data-action="teams" style="border-color:rgba(91,95,199,0.4);color:var(--teams)">↳ Teams</button>
+        ${t.status === 4 || t.status === 5 ? `<button class="btn" data-action="create-kb" style="grid-column:span 2;border-color:rgba(10,132,255,0.3);color:var(--sys-blue)">🧠 Create KB article from this resolution</button>` : `<button class="btn ghost" data-action="create-kb" style="grid-column:span 2;font-size:11px;color:var(--label-3)">🧠 Create KB article (resolve first for best results)</button>`}
       </div>
-      <div style="font-size:10px;color:var(--ink-dim);margin-top:10px;letter-spacing:1px">
-        Status & assignment changes go to the Staged panel. Apply pushes them to Freshservice.
+      <div style="font-size:10px;color:var(--label-3);margin-top:8px">
+        Status changes go to Staged panel — click Apply to push to Freshservice
       </div>
     </div>
   `;
@@ -2807,9 +2882,15 @@ function renderM365(m365){
         <div class="lbl">Risky sign-ins</div>
         <div class="val">${m365.riskySignIns?.length||0} (7d)</div>
       </div>
-      <div class="m365-chip unknown" style="grid-column:span 2">
+      <div class="m365-chip unknown">
         <div class="lbl">Role / Dept</div>
-        <div class="val">${escape(m365.jobTitle||"—")} · ${escape(m365.department||"—")}<span class="sub">${escape(m365.officeLocation||"office unknown")} · Manager: ${escape(m365.manager?.displayName||"?")}</span></div>
+        <div class="val">${escape(m365.jobTitle||"—")}<span class="sub">${escape(m365.department||"—")} · ${escape(m365.officeLocation||"—")}</span></div>
+      </div>
+      <div class="m365-chip ${m365.manager?"ok":"unknown"}">
+        <div class="lbl">Manager</div>
+        <div class="val">${m365.manager ? `<a href="mailto:${m365.manager.mail||""}" style="color:inherit;text-decoration:none" title="Email manager">${escape(m365.manager.displayName)}</a>` : "—"}
+          <span class="sub">${escape(m365.manager?.jobTitle||"")}</span>
+        </div>
       </div>
       ${m365.licenses?.length ? `<div class="m365-licenses">
         <div style="font-size:9px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">Licenses</div>
@@ -3294,6 +3375,9 @@ function handleQuickAction(action, t){
     case "teams":
       openTeamsModal(t);
       return;
+    case "create-kb":
+      createKBFromTicket(t.id, t.subject);
+      return;
   }
   renderDetail();
 }
@@ -3544,6 +3628,29 @@ async function renderStandup(){
         </div>
       </div>
 
+      <!-- BACKGROUND AUTOMATION STATUS -->
+      ${!focusMode ? `
+      <div class="standup-card wide" style="background:var(--fill-quaternary)">
+        <h2 style="font-size:15px">⚙️ Background Automation</h2>
+        <div class="sub" style="margin-bottom:12px">Scheduled jobs running in the background</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          ${[
+            {icon:"⌗", name:"Pattern Detection",    desc:"Every 30 min · posts clusters to Teams"},
+            {icon:"⚡", name:"Auto-Triage Webhook",  desc:"Classifies + assigns on ticket creation"},
+            {icon:"👋", name:"Offboard Scheduler",   desc:"Daily · M365 disable + Retriever return"},
+          ].map(j=>`
+            <div style="background:var(--surface-1);border:0.5px solid var(--sep);border-radius:var(--r-md);padding:10px 12px">
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
+                <span style="font-size:15px">${j.icon}</span>
+                <span style="font-size:12px;font-weight:600;color:var(--label)">${j.name}</span>
+                <span style="margin-left:auto;padding:1px 6px;border-radius:var(--r-full);font-size:9px;font-weight:700;background:var(--ok-fill);color:var(--sys-green)">ON</span>
+              </div>
+              <div style="font-size:11px;color:var(--label-2)">${j.desc}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>` : ""}
+
     </div>
   `;
 
@@ -3700,6 +3807,7 @@ async function detectPatterns(){
     // Update badge
     const badge = document.getElementById("patternsBadge");
     if(badge) { badge.textContent = PATTERNS.length || "0"; badge.style.display = PATTERNS.length ? "" : "none"; }
+    try { sessionStorage.setItem('patterns_last_run', new Date().toISOString()); } catch(e) {}
     // Notify Teams for high-severity clusters
     const highSev = PATTERNS.filter(p=>p.severity==='high');
     if (highSev.length > 0) notifyTeamsPattern(highSev);
@@ -3714,6 +3822,15 @@ async function detectPatterns(){
 }
 
 function renderPatterns(){
+  // Show last scheduled run info
+  const scheduledEl = document.getElementById('scheduledPatternStatus');
+  if(scheduledEl) {
+    const lastRun = sessionStorage.getItem('patterns_last_run');
+    scheduledEl.innerHTML = lastRun 
+      ? `<span style="width:6px;height:6px;border-radius:50%;background:var(--sys-green);display:inline-block"></span> Last auto-run: ${new Date(lastRun).toLocaleTimeString()}`
+      : `<span style="width:6px;height:6px;border-radius:50%;background:var(--label-3);display:inline-block"></span> Scheduler runs every 30 min`;
+  }
+
   const host = $("#mainPatterns");
   if(!PATTERNS.length){
     host.innerHTML = `
@@ -4047,6 +4164,37 @@ $("#copyTeamsBtn").addEventListener("click",()=>{
     toast("Teams message copied · paste into a chat or channel");
     closeModal("teamsModal");
   });
+});
+
+// Send to Teams via webhook
+document.getElementById("sendTeamsBtn")?.addEventListener("click", async () => {
+  const msg = $("#teamsOutput")?.textContent || "";
+  const agentBtn = document.querySelector("#agentSelect button.active");
+  const recipient = agentBtn?.dataset?.agent || "";
+  if (!msg || msg.startsWith("Select")) { toast("Pick a recipient first", "error"); return; }
+  const btn = document.getElementById("sendTeamsBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  try {
+    const res = await fetch("/api/aiTriage", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        action: "teams_send", message: msg, recipient,
+        ticketId: TEAMS_HANDOFF_CONTEXT?.id,
+        ticketSubject: TEAMS_HANDOFF_CONTEXT?.subject
+      })
+    });
+    if (res.ok) {
+      toast("✓ Sent to Teams", "info");
+      playSuccessChime();
+      closeModal("teamsModal");
+    } else {
+      const err = await res.json().catch(()=>({error:"Unknown error"}));
+      throw new Error(err.error || res.status);
+    }
+  } catch(e) {
+    toast("✗ Teams send failed: " + e.message, "error");
+    if (btn) { btn.disabled = false; btn.textContent = "↗ Send to Teams"; }
+  }
 });
 
 // ============================================================
@@ -6006,7 +6154,11 @@ function renderRequesterProfile(profile, email) {
         ${s.commonCategory ? `<span style="padding:2px 9px;border-radius:var(--r-full);font-size:10px;font-weight:600;background:var(--fill-secondary);color:var(--label-2)">Usually: ${s.commonCategory}</span>` : ""}
         ${repeatFlag ? `<span style="padding:2px 9px;border-radius:var(--r-full);font-size:10px;font-weight:600;background:var(--fill-secondary);color:var(--label-2)">Repeat requester</span>` : ""}
       </div>
-      ${ai.notes ? `<div style="font-size:12px;color:var(--label-2);line-height:1.55;background:var(--fill-quaternary);padding:8px 10px;border-radius:var(--r-md);border-left:2px solid var(--sys-blue)">${escape(ai.notes)}</div>` : ""}
+      ${ai.notes ? `<div style="font-size:12px;color:var(--label-2);line-height:1.55;background:var(--fill-quaternary);padding:8px 10px;border-radius:var(--r-md);border-left:2px solid var(--sys-blue);margin-bottom:8px">${escape(ai.notes)}</div>` : ""}
+      <button class="btn ghost" style="width:100%;justify-content:center;font-size:11px;border-radius:var(--r-md)"
+        onclick="viewRequesterHistory('${escape(email)}','${escape(profile.displayName||email.split('@')[0]||'')}')">
+        View all tickets from this requester →
+      </button>
     </div>
   `;
 }
@@ -7180,12 +7332,40 @@ async function loadScreenConnectBySerial(ticketId, serial, deviceName) {
                 ? `<div style="font-size:10px;color:var(--ink-ghost)">Last: ${new Date(s.lastConnected).toLocaleString()}</div>`
                 : ""}
           </div>
-          ${s.launchUrl ? `<a href="${s.launchUrl}" target="_blank" class="btn primary" style="font-size:11px;padding:4px 10px;text-decoration:none">🖥️ Connect</a>` : ""}
+          ${s.launchUrl ? `<a href="${s.launchUrl}" target="_blank" class="btn primary"
+            style="font-size:11px;padding:4px 10px;text-decoration:none"
+            onclick="_scSessionStart.set('${ticketId}_${escape(s.name||s.sessionId)}', new Date())">🖥️ Connect</a>` : ""}
         </div>
       `).join("")}
     `);
   } catch(e) {
     setDeviceCtx("sc", ticketId, `<div style="color:var(--ink-ghost);font-size:11px">ScreenConnect: ${e.message}</div>`);
+  }
+}
+
+// ============================================================
+// MERAKI ALERT ACKNOWLEDGEMENT
+// ============================================================
+const _merakiAcknowledged = new Set();
+
+function ackMerakiAlert(networkId, networkName, btn) {
+  if (_merakiAcknowledged.has(networkId)) return;
+  _merakiAcknowledged.add(networkId);
+  if (btn) {
+    btn.textContent = '✓ Acknowledged';
+    btn.style.color = 'var(--sys-green)';
+    btn.style.borderColor = 'rgba(48,209,88,0.3)';
+    btn.disabled = true;
+  }
+  toast(`✓ Alert acknowledged for ${networkName}`, 'info');
+  // Log to current ticket if open
+  if (CURRENT_ID) {
+    fetch('/api/applyChanges', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'add_note', ticketId:CURRENT_ID,
+        body:`🌐 Meraki alert acknowledged\nNetwork: ${networkName}\nBy: ${ME?.name||'IT Team'}\nAt: ${new Date().toLocaleString()}`,
+        private: true })
+    }).catch(()=>{});
   }
 }
 
@@ -7244,10 +7424,14 @@ async function loadMerakiTicketContext(ticketId, ticket) {
           ${merakiStatusBadge(n.status || "unknown")}
         </div>
         ${hasAlerts ? `<div style="font-size:11px;color:var(--sys-red);margin-bottom:6px">⚠ ${n.alerts.length} active alert${n.alerts.length>1?"s":""}: ${n.alerts.slice(0,2).map(a=>escape(a)).join(", ")}</div>` : `<div style="font-size:11px;color:var(--sys-green);margin-bottom:6px">✓ No active alerts</div>`}
-        <button class="btn ghost" style="font-size:10px;padding:3px 8px;border-radius:var(--r-full)"
-          onclick="switchMode('network');setTimeout(()=>loadNetworkDrillDown('${n.id}','${escape(n.name)}'),400)">
-          View network details ↗
-        </button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn ghost" style="font-size:10px;padding:3px 8px;border-radius:var(--r-full)"
+            onclick="switchMode('network');setTimeout(()=>loadNetworkDrillDown('${n.id}','${escape(n.name)}'),400)">
+            View details ↗
+          </button>
+          ${hasAlerts ? `<button class="btn ghost" style="font-size:10px;padding:3px 8px;border-radius:var(--r-full);color:var(--sys-green)"
+            onclick="ackMerakiAlert('${n.id}','${escape(n.name)}',this)">✓ Acknowledge alerts</button>` : ""}
+        </div>
       </div>
     `;
   } catch(e) {
@@ -7333,7 +7517,45 @@ async function loadTicketThread(ticketId, force=false) {
       host.innerHTML = `<div style="font-size:12px;color:var(--label-3);padding:8px 0">No replies yet.</div>`;
       return;
     }
-    host.innerHTML = convs.map(c => {
+
+    // Analyse sentiment trend across the thread
+    const agentReplies = convs.filter(c => !c.incoming);
+    const requesterMsgs = convs.filter(c => c.incoming);
+    const lastRequesterMsg = requesterMsgs[requesterMsgs.length - 1]?.body_text?.replace(/<[^>]+>/g,' ').trim().slice(0,300) || '';
+
+    // Build sentiment from basic heuristics (Claude if available)
+    let sentimentHtml = '';
+    if (requesterMsgs.length >= 2) {
+      (async () => {
+        try {
+          const sRes = await fetch('/api/aiTriage', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              action: 'thread_sentiment',
+              messages: requesterMsgs.slice(-5).map(m => m.body_text?.replace(/<[^>]+>/g,' ').trim().slice(0,200) || ''),
+              ticketId
+            })
+          });
+          if (sRes.ok) {
+            const sd = await sRes.json();
+            if (sd.sentiment) {
+              const sEl = document.getElementById(`threadSentiment_${ticketId}`);
+              const sColor = sd.sentiment === 'frustrated' ? 'var(--sys-red)' :
+                             sd.sentiment === 'impatient'  ? 'var(--sys-orange)' :
+                             sd.sentiment === 'satisfied'  ? 'var(--sys-green)' : 'var(--label-2)';
+              const sIcon = sd.sentiment === 'frustrated' ? '😤' :
+                            sd.sentiment === 'impatient'  ? '😐' :
+                            sd.sentiment === 'satisfied'  ? '😊' : '😐';
+              if (sEl) sEl.innerHTML = `<span style="font-size:11px;color:${sColor};background:${sColor}18;padding:2px 8px;border-radius:var(--r-full);font-weight:600">${sIcon} ${sd.sentiment.charAt(0).toUpperCase()+sd.sentiment.slice(1)}</span>${sd.note?`<span style="font-size:11px;color:var(--label-3);margin-left:6px">${escape(sd.note)}</span>`:''}`;
+            }
+          }
+        } catch(e) {}
+      })();
+    }
+    host.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div id="threadSentiment_${ticketId}" style="min-height:20px"></div>
+      <div style="font-size:10px;color:var(--label-3)">${agentReplies.length} ${agentReplies.length===1?'reply':'replies'} · ${requesterMsgs.length} from requester</div>
+    </div>` + convs.map(c => {
       const isPrivate = c.private;
       const isAgent = c.user_id && !c.incoming;
       const agentName = c.agent_name || c.support_email || 'Agent';
@@ -7535,17 +7757,31 @@ async function loadKandjiTicketContext(ticketId, ticket) {
     const c = d._compliance || {};
     const daysLabel = c.daysSinceCheckIn !== null ? `${c.daysSinceCheckIn}d ago` : "never";
 
-    // Device age calculation
-    const enrolledYear = d.enrollment_date ? new Date(d.enrollment_date).getFullYear() : null;
-    const deviceAgeYears = enrolledYear ? new Date().getFullYear() - enrolledYear : null;
+    // Device age — from compliance output (API computes from first_enrollment)
+    const deviceAgeYears = d._compliance?.deviceAgeYears ?? null;
     const isOldDevice = deviceAgeYears !== null && deviceAgeYears >= 4;
+    const refreshUrgent = deviceAgeYears !== null && deviceAgeYears >= 5;
+    const ageLabel = deviceAgeYears !== null ? deviceAgeYears + "yr old" : null;
 
     setDeviceCtx("kandji", ticketId, `
+      ${isOldDevice ? `
+        <div style="background:${refreshUrgent?'rgba(255,69,58,0.08)':'rgba(255,159,10,0.06)'};border:0.5px solid ${refreshUrgent?'rgba(255,69,58,0.35)':'rgba(255,159,10,0.35)'};border-radius:var(--r-md);padding:9px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+          <span style="font-size:20px;flex-shrink:0">${refreshUrgent?'🚨':'🔄'}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;font-weight:700;color:${refreshUrgent?'var(--sys-red)':'var(--sys-orange)'};margin-bottom:2px">${refreshUrgent?'OVERDUE FOR REFRESH':'DUE FOR REFRESH'} — ${deviceAgeYears} years old</div>
+            <div style="font-size:10.5px;color:var(--label-2)">${refreshUrgent?'Immediate replacement recommended':'Schedule replacement when possible'}</div>
+          </div>
+          <button class="btn" style="flex-shrink:0;font-size:10px;padding:4px 10px;border-radius:var(--r-full);${refreshUrgent?'color:var(--sys-red);border-color:rgba(255,69,58,0.3)':'color:var(--sys-orange);border-color:rgba(255,159,10,0.3)'}"
+            onclick="showRetrieverDeployModal(${ticketId},'${(ticket?.requester_name||"").replace(/'/g,"\\'")}','${(ticket?.requester_email||"").replace(/'/g,"\\'")}')">
+            📦 Order Replacement
+          </button>
+        </div>
+      ` : ""}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
         <div style="background:var(--surface-2);border-radius:var(--r-md);padding:7px 10px">
           <div style="font-size:9.5px;color:var(--label-3);font-weight:600;margin-bottom:2px">Device</div>
           <div style="font-size:12.5px;font-weight:600;color:var(--label)">${d.device_name||"Unknown"}</div>
-          <div style="font-size:10px;color:var(--label-2)">${d.model||""}</div>
+          <div style="font-size:10px;color:var(--label-2)">${d.model||""}${ageLabel?` · ${ageLabel}`:""}</div>
         </div>
         <div style="background:var(--surface-2);border-radius:var(--r-md);padding:7px 10px">
           <div style="font-size:9.5px;color:var(--label-3);font-weight:600;margin-bottom:2px">macOS</div>
@@ -7556,12 +7792,10 @@ async function loadKandjiTicketContext(ticketId, ticket) {
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
         <span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:${d.filevault_enabled?"var(--ok-fill)":"var(--danger-fill)"};color:${d.filevault_enabled?"var(--sys-green)":"var(--sys-red)"}">${d.filevault_enabled?"🔒 FileVault ON":"🔓 FileVault OFF"}</span>
         ${c.issues?.length ? c.issues.map(i=>`<span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:var(--warn-fill);color:var(--sys-orange)">⚠ ${i}</span>`).join("") : `<span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:var(--ok-fill);color:var(--sys-green)">✓ Compliant</span>`}
-        ${isOldDevice ? `<span style="padding:2px 8px;border-radius:var(--r-full);font-size:10px;background:var(--warn-fill);color:var(--sys-orange)">⚠ ${deviceAgeYears}yr old — consider replacement</span>` : ""}
       </div>
       <div style="display:flex;gap:6px">
         <button class="btn" style="font-size:11px;padding:4px 10px;border-radius:var(--r-full)" onclick="runMdmAction('checkin','${d.device_id}','${(d.device_name||"").replace(/'/g,"\\'")}')">⟳ Check-in</button>
         <button class="btn ghost" style="font-size:11px;padding:4px 10px;border-radius:var(--r-full)" onclick="showMacDeviceDetail(${JSON.stringify(d).replace(/"/g,'&quot;')})">Details ↗</button>
-        ${isOldDevice ? `<button class="btn" style="font-size:11px;padding:4px 10px;border-radius:var(--r-full);color:var(--sys-orange);border-color:rgba(255,159,10,0.3)" onclick="showRetrieverDeployModal(${ticketId},'${(ticket?.requester_name||"").replace(/'/g,"\\'")}','${(ticket?.requester_email||"").replace(/'/g,"\\'")}')">📦 Replace Device</button>` : ""}
       </div>
     `);
 
@@ -7739,12 +7973,19 @@ async function loadIntuneComplianceDetails(deviceId, ticketId) {
     }
     host.innerHTML = `
       <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--danger);margin-bottom:4px">Failing Policies</div>
-      ${failing.map(p => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:var(--danger-dim);border-radius:var(--radius-sm);margin-bottom:3px;font-size:11px">
-          <span style="color:var(--ink)">${p.displayName||p.id}</span>
-          <span style="color:var(--danger);font-weight:700">${(p.state||"").toUpperCase()}</span>
+      ${failing.map(p => {
+        const stateColor = p.state === 'noncompliant' ? 'var(--sys-red)' : p.state === 'inGracePeriod' ? 'var(--sys-orange)' : 'var(--label-2)';
+        const stateBg = p.state === 'noncompliant' ? 'var(--danger-fill)' : 'var(--warn-fill)';
+        return `
+        <div style="background:${stateBg};border:0.5px solid rgba(255,69,58,0.2);border-radius:var(--r-md);padding:7px 10px;margin-bottom:5px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${p.settingSummary?.length?'5px':'0'}">
+            <span style="font-size:12px;font-weight:600;color:var(--label)">${escape(p.displayName||p.id)}</span>
+            <span style="padding:2px 8px;border-radius:var(--r-full);font-size:9.5px;font-weight:700;background:${stateColor}22;color:${stateColor}">${(p.state||"").toUpperCase()}</span>
+          </div>
+          ${p.settingSummary?.length ? `<div style="font-size:10.5px;color:var(--label-2);">${escape(p.settingSummary.slice(0,2).map(s=>s.settingName||s.name||s.setting).join(" · "))}</div>` : ""}
         </div>
-      `).join("")}
+        `;
+      }).join("")}
     `;
   } catch(e) {
     host.innerHTML = `<div style="font-size:11px;color:var(--ink-ghost)">Could not load policy details</div>`;
