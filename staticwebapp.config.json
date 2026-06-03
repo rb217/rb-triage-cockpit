@@ -6,11 +6,11 @@
     },
     {
       "route": "/api/*",
-      "allowedRoles": ["itteam"]
+      "allowedRoles": ["it-team"]
     },
     {
       "route": "/*",
-      "allowedRoles": ["itteam"]
+      "allowedRoles": ["it-team"]
     }
   ],
   "responseOverrides": {
