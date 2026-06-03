@@ -3988,6 +3988,23 @@ async function fetchTickets({silent=false}={}){
       window.location.href = "/.auth/login/aad?post_login_redirect_uri=" + encodeURIComponent(window.location.pathname);
       return;
     }
+    if(res.status === 403){
+      // Not authorized — role not assigned yet
+      setConn("Fs", "access denied", "alert");
+      const list = document.getElementById("ticketList");
+      if(list) list.innerHTML = `
+        <div style="padding:40px 20px;text-align:center">
+          <div style="font-size:32px;margin-bottom:14px">🔒</div>
+          <div style="font-size:16px;font-weight:600;color:var(--label);margin-bottom:8px">Access Denied</div>
+          <div style="font-size:13px;color:var(--label-2);line-height:1.6;margin-bottom:16px">
+            Your account doesn't have the <code style="background:var(--fill-secondary);padding:1px 6px;border-radius:4px">itteam</code> role assigned.<br>
+            Ask your Azure admin to assign it via:<br>
+            <strong>Azure Portal → Static Web Apps → rb-triage-cockpit → Role management</strong>
+          </div>
+          <button class="btn" onclick="window.location.href='/.auth/logout'" style="font-size:12px">Sign out and try again</button>
+        </div>`;
+      return;
+    }
     if(!res.ok) throw new Error("API "+res.status);
     const data = await res.json();
     TICKETS = (data.open || []).map(normalizeTicket);
