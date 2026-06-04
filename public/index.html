@@ -3929,12 +3929,23 @@ async function declareIncident(pattern) {
 // ============================================================
 function switchMode(mode){
   CURRENT_MODE = mode;
-  $$(".modetab").forEach(t=>t.classList.toggle("active", t.dataset.mode===mode));
-  $("#mainTriage").classList.toggle("hidden", mode!=="triage");
-  $("#mainStandup").classList.toggle("hidden", mode!=="standup");
-  $("#mainPatterns").classList.toggle("hidden", mode!=="patterns");
-  if(mode==="standup") renderStandup();
+  // Update tab active state
+  $(".modetab").forEach(t=>t.classList.toggle("active", t.dataset.mode===mode));
+  // Show/hide all panels
+  const panels = ["triage","standup","patterns","devices","network","kb","analytics","fleet"];
+  panels.forEach(p => {
+    const id = "main"+p.charAt(0).toUpperCase()+p.slice(1);
+    const el = $("#"+id);
+    if(el) el.classList.toggle("hidden", p!==mode);
+  });
+  // Trigger data load for each tab
+  if(mode==="standup")  renderStandup();
   if(mode==="patterns" && !PATTERNS.length) detectPatterns();
+  if(mode==="devices")  loadRetriever();
+  if(mode==="network")  { if(!_merakiData) loadNetwork(); }
+  if(mode==="kb")       { if(!_kbData?.length) loadKB(); }
+  if(mode==="analytics") renderAnalytics();
+  if(mode==="fleet")    { if(!_fleetData) loadFleet(); }
 }
 
 // ============================================================
