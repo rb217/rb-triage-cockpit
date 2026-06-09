@@ -2176,6 +2176,7 @@ let PROVISIONING_LOADING = new Set();
 let DRAFT_REPLIES = new Map();   // ticketId -> { reply, confidence, needsHumanReview, rationale }
 let DRAFT_LOADING = new Set();
 let AUTO_REPLY_SETTINGS = null;  // loaded lazily
+let AI_ENABLED = true; // set false when Anthropic key not configured
 let FILTERS = { scope:"all",  status:"all", prio:"all", aging:"all", group:"none", search:"" };
 let CURRENT_MODE = "triage";
 
@@ -4194,7 +4195,7 @@ async function fetchTickets({silent=false}={}){
     // Only run pattern detection if we have enough tickets and haven't run recently
     const _lastPatternRun = (() => { try { return sessionStorage.getItem('patterns_last_run'); } catch(e){ return null; } })();
     const _minutesSinceLast = _lastPatternRun ? Math.floor((Date.now()-new Date(_lastPatternRun))/60000) : 999;
-    if(TICKETS.length >= 3 && _minutesSinceLast > 10) setTimeout(() => detectPatterns(), 2000);
+    if(AI_ENABLED && TICKETS.length >= 3 && _minutesSinceLast > 10) setTimeout(() => detectPatterns(), 2000);
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
     const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
@@ -8890,6 +8891,23 @@ setInterval(updateClock,1000); updateClock();
     if (e.key === "Escape")    { closeCmdPalette(); }
   });
   
+  // Check if AI features are available
+  try {
+    const aiCheck = await fetch('/api/aiTriage', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'ping'}) });
+    if(aiCheck.status === 503) {
+      AI_ENABLED = false;
+      // Grey out AI buttons
+      ['aiTriageBtn','openSettingsBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) { el.style.opacity='0.4'; el.title='AI features not configured — add ANTHROPIC_API_KEY in Azure'; }
+      });
+      // Disable AI Triage button click
+      const atBtn = document.getElementById('aiTriageBtn');
+      if(atBtn) atBtn.onclick = () => toast('⚠ AI not configured — ask Eric to set ANTHROPIC_API_KEY in Azure Portal → SWA Configuration', 'error');
+      console.info('AI features disabled — ANTHROPIC_API_KEY not set');
+    }
+  } catch(e) { /* non-fatal */ }
+
   await fetchTickets();
   // Auto-refresh every 60 seconds
   setInterval(()=>fetchTickets({silent:true}), 60000);
