@@ -59,6 +59,16 @@ module.exports = async function(context, req) {
 
   const body = req.body || {};
 
+  // ── Ping — always available, used to check if AI is configured ───────────
+  if (body.action === 'ping') {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      context.res = { status: 503, body: { error: "ANTHROPIC_API_KEY not configured" } };
+    } else {
+      context.res = { body: { ok: true, model: "claude-sonnet-4-20250514" } };
+    }
+    return;
+  }
+
   // ── Check Anthropic key is configured ────────────────────────────────────
   if (!process.env.ANTHROPIC_API_KEY) {
     context.res = { status: 503, body: { error: "ANTHROPIC_API_KEY not configured in Azure SWA environment variables. Go to Azure Portal → Static Web Apps → Configuration → Add application setting: ANTHROPIC_API_KEY" } };
