@@ -1333,15 +1333,27 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div>
         <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">Device Management</h2>
-        <div style="font-size:13px;color:var(--ink-dim);margin-top:3px">Retriever warehouse inventory · returns · deployments</div>
+        <div style="font-size:13px;color:var(--label-3);margin-top:3px">Retriever · Intune · BitLocker</div>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <!-- Sub-tab toggle -->
+        <div style="display:flex;gap:2px;background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-full);padding:3px">
+          <button id="devTabRetriever" onclick="switchDeviceSection('retriever')"
+            style="padding:4px 14px;border-radius:var(--r-full);font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--sys-blue);color:#fff;transition:.15s">
+            📦 Retriever
+          </button>
+          <button id="devTabIntune" onclick="switchDeviceSection('intune')"
+            style="padding:4px 14px;border-radius:var(--r-full);font-size:12px;font-weight:600;border:none;cursor:pointer;background:transparent;color:var(--label-2);transition:.15s">
+            🖥 Intune
+          </button>
+        </div>
         <button class="btn" id="newReturnBtn">📦 New Return</button>
-        <button class="btn primary" id="newDeployBtn">🚀 Deploy Device</button>
-        <button class="btn ghost" id="refreshDevicesBtn">⟳ Refresh</button>
+        <button class="btn primary" id="newDeployBtn">🚀 Deploy</button>
+        <button class="btn ghost" id="refreshDevicesBtn" onclick="refreshCurrentDeviceSection()">⟳</button>
       </div>
     </div>
 
+    <div id="retrieverSection">
     <!-- Balances strip -->
     <div id="balancesStrip" style="display:flex;gap:10px;margin-bottom:16px"></div>
 
@@ -1448,6 +1460,74 @@
         </div>
         <div id="deploymentsList" style="padding:8px;overflow-y:auto;flex:1;max-height:480px">
           <div style="text-align:center;padding:30px;color:var(--ink-dim);font-size:13px">Loading…</div>
+        </div>
+      </div>
+
+    </div>
+
+
+    <!-- ══ INTUNE SECTION (hidden by default) ══ -->
+    <div id="intuneSection" style="display:none">
+
+      <!-- Summary strip -->
+      <div id="intuneSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px">
+        <div style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);padding:12px 14px;text-align:center">
+          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--label)" id="intune-total">—</div>
+          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Total</div>
+        </div>
+        <div style="background:rgba(48,209,88,0.06);border:0.5px solid rgba(48,209,88,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
+          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-green)" id="intune-compliant">—</div>
+          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Compliant</div>
+        </div>
+        <div style="background:rgba(255,69,58,0.06);border:0.5px solid rgba(255,69,58,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
+          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-red)" id="intune-noncompliant">—</div>
+          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Non-compliant</div>
+        </div>
+        <div style="background:rgba(100,210,255,0.06);border:0.5px solid rgba(100,210,255,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
+          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-cyan)" id="intune-encrypted">—</div>
+          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Encrypted %</div>
+        </div>
+        <div style="background:rgba(255,159,10,0.06);border:0.5px solid rgba(255,159,10,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
+          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-orange)" id="intune-stale">—</div>
+          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Stale (7d+)</div>
+        </div>
+      </div>
+
+      <!-- Search + filter bar -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <div style="position:relative;flex:1">
+          <input id="intuneSearch" type="text" placeholder="Search device name, user, serial…"
+            oninput="filterIntuneDevices()"
+            style="width:100%;background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px 8px 32px;font-size:13px;outline:none;box-sizing:border-box"/>
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--label-3);font-size:14px">🔍</span>
+        </div>
+        <select id="intuneOsFilter" onchange="filterIntuneDevices()"
+          style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px;font-size:12px;outline:none">
+          <option value="">All OS</option>
+          <option value="Windows">Windows</option>
+          <option value="macOS">macOS</option>
+          <option value="iOS">iOS/iPadOS</option>
+          <option value="Android">Android</option>
+        </select>
+        <select id="intuneCompFilter" onchange="filterIntuneDevices()"
+          style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px;font-size:12px;outline:none">
+          <option value="">All compliance</option>
+          <option value="compliant">Compliant</option>
+          <option value="noncompliant">Non-compliant</option>
+          <option value="inGracePeriod">Grace period</option>
+          <option value="unknown">Unknown</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--label-2);cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="intuneEncFilter" onchange="filterIntuneDevices()" style="accent-color:var(--sys-blue)"/>
+          Unencrypted only
+        </label>
+      </div>
+
+      <!-- Device grid -->
+      <div id="intuneDeviceList" style="display:flex;flex-direction:column;gap:6px">
+        <div style="text-align:center;padding:60px 20px;color:var(--label-3)">
+          <div style="font-size:32px;margin-bottom:10px;opacity:.3">🖥</div>
+          <div style="font-size:15px;font-weight:600;color:var(--label-2)">Click Intune tab to load devices</div>
         </div>
       </div>
 
@@ -2060,11 +2140,7 @@
         <button class="btn ghost" id="dep-preview-btn">Preview →</button>
         <button class="btn primary hidden" id="dep-confirm-btn">✓ Confirm & Deploy</button>
       </div>
-    </div>
-  </div>
-</div>
-
-<script>
+    
 // ============================================================
 // CONFIG
 // ============================================================
@@ -4174,6 +4250,431 @@ async function loadPrincipal(){
 // ============================================================
 function openModal(id){$("#"+id).classList.add("open")}
 function closeModal(id){$("#"+id).classList.remove("open")}
+
+
+
+// ============================================================
+// INTUNE — FULL DEVICE MANAGEMENT
+// ============================================================
+let _intuneDevices = null;
+let _intuneDeviceSection = 'retriever'; // 'retriever' | 'intune'
+
+function switchDeviceSection(section) {
+  _intuneDeviceSection = section;
+  const retrieverEl = document.getElementById('retrieverSection');
+  const intuneEl    = document.getElementById('intuneSection');
+  const btnR = document.getElementById('devTabRetriever');
+  const btnI = document.getElementById('devTabIntune');
+
+  if (section === 'retriever') {
+    if(retrieverEl) retrieverEl.style.display = '';
+    if(intuneEl)    intuneEl.style.display    = 'none';
+    if(btnR){ btnR.style.background='var(--sys-blue)'; btnR.style.color='#fff'; }
+    if(btnI){ btnI.style.background='transparent';     btnI.style.color='var(--label-2)'; }
+  } else {
+    if(retrieverEl) retrieverEl.style.display = 'none';
+    if(intuneEl)    intuneEl.style.display    = '';
+    if(btnI){ btnI.style.background='var(--sys-blue)'; btnI.style.color='#fff'; }
+    if(btnR){ btnR.style.background='transparent';     btnR.style.color='var(--label-2)'; }
+    if(!_intuneDevices) loadIntuneDevices();
+  }
+}
+
+function refreshCurrentDeviceSection() {
+  if(_intuneDeviceSection === 'retriever') {
+    loadDevices();
+  } else {
+    _intuneDevices = null;
+    loadIntuneDevices();
+  }
+}
+
+async function loadIntuneDevices() {
+  const list = document.getElementById('intuneDeviceList');
+  if(!list) return;
+
+  // Skeleton
+  list.innerHTML = [1,2,3,4,5].map(()=>`
+    <div style="display:flex;gap:12px;align-items:center;padding:12px 14px;background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md)">
+      <div class="skeleton" style="width:36px;height:36px;border-radius:var(--r-md);flex-shrink:0"></div>
+      <div style="flex:1">
+        <div class="skeleton" style="height:13px;width:55%;margin-bottom:6px;border-radius:var(--r-sm)"></div>
+        <div class="skeleton" style="height:10px;width:35%;border-radius:var(--r-sm)"></div>
+      </div>
+      <div class="skeleton" style="width:80px;height:22px;border-radius:var(--r-full)"></div>
+    </div>
+  `).join('');
+
+  try {
+    const res = await fetch('/api/intune?action=devices');
+    if(!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    _intuneDevices = data.devices || [];
+    renderIntuneSummary(data.summary || {});
+    renderIntuneDeviceList(_intuneDevices);
+  } catch(e) {
+    list.innerHTML = `<div style="padding:40px;text-align:center;color:var(--label-3)">
+      <div style="font-size:28px;margin-bottom:10px">⚠️</div>
+      <div style="font-size:14px;font-weight:600;color:var(--label-2)">Could not load Intune devices</div>
+      <div style="font-size:12px;margin-top:6px">${escape(e.message)}</div>
+    </div>`;
+  }
+}
+
+function renderIntuneSummary(s) {
+  const set = (id, val) => { const el=document.getElementById(id); if(el) countUp(el, val, 500); };
+  set('intune-total',        s.total        || 0);
+  set('intune-compliant',    s.byCompliance?.compliant    || 0);
+  set('intune-noncompliant', s.byCompliance?.noncompliant || 0);
+  const encEl = document.getElementById('intune-encrypted');
+  if(encEl) encEl.textContent = (s.encryptedPct || 0)+'%';
+  set('intune-stale',        s.staleCount   || 0);
+}
+
+function filterIntuneDevices() {
+  if(!_intuneDevices) return;
+  const q      = (document.getElementById('intuneSearch')?.value || '').toLowerCase();
+  const os     = document.getElementById('intuneOsFilter')?.value   || '';
+  const comp   = document.getElementById('intuneCompFilter')?.value || '';
+  const encOnly= document.getElementById('intuneEncFilter')?.checked || false;
+
+  const filtered = _intuneDevices.filter(d => {
+    if(q && !( (d.deviceName||'').toLowerCase().includes(q) ||
+               (d.userDisplayName||'').toLowerCase().includes(q) ||
+               (d.serialNumber||'').toLowerCase().includes(q) ||
+               (d.userPrincipalName||'').toLowerCase().includes(q) )) return false;
+    if(os   && !(d.operatingSystem||'').includes(os)) return false;
+    if(comp && d.complianceState !== comp) return false;
+    if(encOnly && d.isEncrypted) return false;
+    return true;
+  });
+  renderIntuneDeviceList(filtered);
+}
+
+function renderIntuneDeviceList(devices) {
+  const list = document.getElementById('intuneDeviceList');
+  if(!list) return;
+
+  if(!devices.length) {
+    list.innerHTML = `<div style="padding:60px;text-align:center;color:var(--label-3)">
+      <div style="font-size:28px;margin-bottom:10px;opacity:.3">🔍</div>
+      <div style="font-size:14px;font-weight:600;color:var(--label-2)">No devices match your filters</div>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = devices.map(d => {
+    const comp   = d.complianceState || 'unknown';
+    const compColor = {compliant:'var(--sys-green)',noncompliant:'var(--sys-red)',inGracePeriod:'var(--sys-orange)',unknown:'var(--label-3)'}[comp] || 'var(--label-3)';
+    const compBg    = {compliant:'rgba(48,209,88,0.10)',noncompliant:'rgba(255,69,58,0.10)',inGracePeriod:'rgba(255,159,10,0.10)',unknown:'rgba(255,255,255,0.04)'}[comp] || 'rgba(255,255,255,0.04)';
+    const days = d.lastSyncDateTime ? Math.floor((Date.now()-new Date(d.lastSyncDateTime))/86400000) : null;
+    const syncLabel = days===null?'never':days===0?'today':days+'d ago';
+    const syncColor = days===null||days>=7 ? 'var(--sys-red)' : days>=3 ? 'var(--sys-orange)' : 'var(--sys-green)';
+    const osIcon = (d.operatingSystem||'').includes('Windows')?'🪟':(d.operatingSystem||'').includes('macOS')?'🍎':(d.operatingSystem||'').includes('iOS')?'📱':'💻';
+    const isWin = (d.operatingSystem||'').includes('Windows');
+    const encLabel = d.isEncrypted ? (isWin ? '🔒 BitLocker ON' : '🔒 Encrypted') : '🔓 Not encrypted';
+    const encColor = d.isEncrypted ? 'var(--sys-green)' : 'var(--sys-red)';
+    const storageGB = d.totalStorageSpaceInBytes ? (d.totalStorageSpaceInBytes/1073741824).toFixed(0)+'GB' : '—';
+    const freeGB    = d.freeStorageSpaceInBytes  ? (d.freeStorageSpaceInBytes /1073741824).toFixed(0)+'GB free' : '';
+    const usedPct   = (d.totalStorageSpaceInBytes && d.freeStorageSpaceInBytes)
+      ? Math.round((1 - d.freeStorageSpaceInBytes/d.totalStorageSpaceInBytes)*100) : null;
+
+    return `
+      <div style="background:var(--fill-quaternary);border:0.5px solid ${comp==='noncompliant'?'rgba(255,69,58,0.3)':'var(--sep)'};border-radius:var(--r-md);padding:12px 14px;transition:.15s"
+           onmouseover="this.style.background='var(--fill-secondary)'" onmouseout="this.style.background='var(--fill-quaternary)'">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <!-- OS icon -->
+          <div style="width:36px;height:36px;border-radius:var(--r-md);background:var(--fill-secondary);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
+            ${osIcon}
+          </div>
+          <!-- Main info -->
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
+              <div style="font-size:14px;font-weight:700;color:var(--label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                ${escape(d.deviceName||'Unknown')}
+              </div>
+              <span style="background:${compBg};color:${compColor};padding:3px 10px;border-radius:var(--r-full);font-size:10px;font-weight:700;letter-spacing:.3px;flex-shrink:0">
+                ${comp.toUpperCase()}
+              </span>
+            </div>
+            <div style="font-size:12px;color:var(--label-2);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              ${escape(d.userDisplayName||d.userPrincipalName||'—')} · ${escape(d.operatingSystem||'')} ${escape((d.osVersion||'').split('.').slice(0,2).join('.'))}
+            </div>
+            <!-- Stats row -->
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <span style="font-size:11px;color:${encColor};background:${d.isEncrypted?'rgba(48,209,88,0.08)':'rgba(255,69,58,0.08)'};padding:2px 8px;border-radius:var(--r-full)">
+                ${encLabel}
+              </span>
+              <span style="font-size:11px;color:${syncColor};background:${syncColor}18;padding:2px 8px;border-radius:var(--r-full)">
+                🕐 ${syncLabel}
+              </span>
+              ${storageGB !== '—' ? `<span style="font-size:11px;color:var(--label-3);padding:2px 8px;border-radius:var(--r-full);background:var(--fill-secondary)">${storageGB}${freeGB?' · '+freeGB:''}</span>` : ''}
+              ${d.serialNumber ? `<span style="font-size:10px;color:var(--label-3);font-family:var(--mono)">${escape(d.serialNumber)}</span>` : ''}
+            </div>
+            <!-- Storage bar if available -->
+            ${usedPct !== null ? `
+              <div style="margin-top:8px">
+                <div style="height:3px;background:var(--fill-secondary);border-radius:2px;overflow:hidden">
+                  <div style="height:100%;width:${usedPct}%;background:${usedPct>90?'var(--sys-red)':usedPct>75?'var(--sys-orange)':'var(--sys-blue)'};border-radius:2px;transition:width .5s"></div>
+                </div>
+              </div>
+            ` : ''}
+            <!-- Compliance warning + policy link -->
+            ${comp === 'noncompliant' ? `
+              <div style="margin-top:8px;background:rgba(255,69,58,0.08);border:0.5px solid rgba(255,69,58,0.2);border-radius:var(--r-sm);padding:6px 10px;font-size:11.5px;color:var(--sys-red);display:flex;justify-content:space-between;align-items:center">
+                <span>⚠ Non-compliant — policies need attention</span>
+                <button onclick="showIntunePolicies('${d.id}','${escape(d.deviceName||'')}')"
+                  style="background:none;border:none;color:var(--sys-blue);font-size:11px;cursor:pointer;padding:0;font-weight:600">
+                  View policies →
+                </button>
+              </div>
+            ` : ''}
+          </div>
+          <!-- Action buttons -->
+          <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
+            ${isWin && d.isEncrypted ? `
+              <button onclick="showBitLockerKey('${d.id}','${d.azureADDeviceId||d.id}','${escape(d.deviceName||'')}')"
+                style="padding:5px 12px;border-radius:var(--r-md);border:0.5px solid rgba(100,210,255,0.3);background:rgba(100,210,255,0.08);color:var(--sys-cyan);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
+                🔑 BitLocker Key
+              </button>
+            ` : ''}
+            <button onclick="showIntuneDeviceDetail('${d.id}','${escape(d.deviceName||'')}')"
+              style="padding:5px 12px;border-radius:var(--r-md);border:0.5px solid var(--sep);background:var(--fill-secondary);color:var(--label-2);font-size:11px;cursor:pointer;white-space:nowrap">
+              Details
+            </button>
+            <button onclick="runIntuneAction('sync','${d.id}','${escape(d.deviceName||'')}')"
+              style="padding:5px 12px;border-radius:var(--r-md);border:0.5px solid var(--sep);background:var(--fill-secondary);color:var(--label-2);font-size:11px;cursor:pointer;white-space:nowrap">
+              ⟳ Sync
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── BitLocker key retrieval ───────────────────────────────────────────────
+async function showBitLockerKey(deviceId, azureDeviceId, deviceName) {
+  showPopoutSheet(`🔑 BitLocker Recovery Key — ${deviceName}`, `
+    <div id="blKeyContent" style="padding:16px 0">
+      <div style="display:flex;align-items:center;gap:8px;color:var(--label-2);font-size:13px">
+        <div class="loader" style="width:16px;height:16px;border-width:2px"></div>
+        Looking up recovery keys…
+      </div>
+    </div>
+  `);
+
+  try {
+    const res = await fetch(`/api/intune?action=bitlocker&deviceId=${encodeURIComponent(azureDeviceId||deviceId)}`);
+    const data = res.ok ? await res.json() : { keys: [] };
+    const keys = data.keys || [];
+    const host = document.getElementById('blKeyContent');
+    if(!host) return;
+
+    if(!keys.length) {
+      host.innerHTML = `
+        <div style="background:rgba(255,159,10,0.08);border:0.5px solid rgba(255,159,10,0.25);border-radius:var(--r-md);padding:16px;margin-bottom:12px">
+          <div style="font-size:15px;font-weight:600;color:var(--sys-orange);margin-bottom:6px">⚠ No BitLocker keys found</div>
+          <div style="font-size:13px;color:var(--label-2);line-height:1.5">
+            No recovery keys are stored in Azure AD for this device. This could mean:
+            <ul style="margin:8px 0 0 16px;padding:0;color:var(--label-3)">
+              <li>BitLocker was enabled before Intune enrollment</li>
+              <li>The key hasn't been escrowed to Azure AD</li>
+              <li>Your app registration needs <code style="background:var(--fill-secondary);padding:1px 5px;border-radius:3px">BitLockerKey.ReadBasic.All</code> permission</li>
+            </ul>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    host.innerHTML = `
+      <div style="background:rgba(100,210,255,0.06);border:0.5px solid rgba(100,210,255,0.2);border-radius:var(--r-md);padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--label-2);line-height:1.5">
+        ⚠ Recovery keys are sensitive. This action is logged. Only retrieve if you need to unlock this device.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${keys.map((k,i) => `
+          <div style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);padding:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div>
+                <div style="font-size:12px;font-weight:700;color:var(--label)">Recovery Key ${i+1}</div>
+                <div style="font-size:10px;color:var(--label-3);margin-top:2px">
+                  Volume: ${escape(k.volumeType||'—')} · Created: ${k.createdDateTime?new Date(k.createdDateTime).toLocaleDateString():'—'}
+                </div>
+              </div>
+              <button id="blRevealBtn_${k.id}" onclick="revealBitLockerKey('${k.id}','blKey_${k.id}','blRevealBtn_${k.id}')"
+                style="padding:6px 14px;border-radius:var(--r-full);border:0.5px solid rgba(100,210,255,0.3);background:rgba(100,210,255,0.10);color:var(--sys-cyan);font-size:11.5px;font-weight:600;cursor:pointer">
+                Reveal Key
+              </button>
+            </div>
+            <div id="blKey_${k.id}" style="font-family:var(--mono);font-size:14px;letter-spacing:2px;color:var(--sys-cyan);background:rgba(100,210,255,0.06);border-radius:var(--r-sm);padding:10px 12px;display:none;word-break:break-all;cursor:pointer"
+              onclick="copyBitLockerKey(this)" title="Click to copy"></div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    // Log the lookup to current ticket if one is open
+    if(CURRENT_ID) {
+      fetch('/api/applyChanges', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'add_note', ticketId:CURRENT_ID,
+          body:`🔑 BitLocker key lookup\nDevice: ${deviceName}\nBy: ${ME?.names?.[0]||'IT Team'}\nAt: ${new Date().toLocaleString()}\nKeys found: ${keys.length}`,
+          private: true })
+      }).catch(()=>{});
+    }
+
+  } catch(e) {
+    const host = document.getElementById('blKeyContent');
+    if(host) host.innerHTML = `<div style="color:var(--sys-red);font-size:13px">Failed to load keys: ${escape(e.message)}</div>`;
+  }
+}
+
+async function revealBitLockerKey(keyId, displayId, btnId) {
+  const btn = document.getElementById(btnId);
+  const display = document.getElementById(displayId);
+  if(!btn || !display) return;
+  btn.textContent = 'Loading…';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/intune?action=bitlockerkey&id=${encodeURIComponent(keyId)}`);
+    if(!res.ok) throw new Error(`${res.status} — Make sure BitLockerKey.Read.All permission is granted`);
+    const data = await res.json();
+    const key = data.key || 'Key not available';
+    display.textContent = key;
+    display.style.display = 'block';
+    btn.textContent = '📋 Copy';
+    btn.disabled = false;
+    btn.onclick = () => { navigator.clipboard?.writeText(key).then(()=>{ btn.textContent='✓ Copied!'; setTimeout(()=>btn.textContent='📋 Copy',2000); }); };
+  } catch(e) {
+    btn.textContent = '✗ Failed';
+    btn.style.color = 'var(--sys-red)';
+    display.textContent = e.message;
+    display.style.display = 'block';
+    display.style.color = 'var(--sys-red)';
+    display.style.letterSpacing = 'normal';
+    display.style.fontSize = '11px';
+  }
+}
+
+function copyBitLockerKey(el) {
+  const key = el.textContent;
+  if(!key || key.length < 10) return;
+  navigator.clipboard?.writeText(key).then(()=>{
+    const orig = el.style.background;
+    el.style.background = 'rgba(48,209,88,0.15)';
+    setTimeout(()=>el.style.background=orig, 800);
+    toast('✓ Recovery key copied', 'info');
+  });
+}
+
+// ── Intune device detail sheet ──────────────────────────────────────────
+async function showIntuneDeviceDetail(deviceId, deviceName) {
+  showPopoutSheet(`🖥 ${deviceName}`, `
+    <div id="intuneDetailContent">
+      <div style="display:flex;align-items:center;gap:8px;color:var(--label-2);font-size:13px;padding:12px 0">
+        <div class="loader" style="width:16px;height:16px;border-width:2px"></div>
+        Loading device details…
+      </div>
+    </div>
+  `);
+
+  try {
+    const res = await fetch(`/api/intune?action=device&id=${deviceId}`);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { device: d, failingPolicies } = await res.json();
+    if(!d) throw new Error('No device data returned');
+
+    const host = document.getElementById('intuneDetailContent');
+    if(!host) return;
+
+    const enrolled = d.enrolledDateTime ? new Date(d.enrolledDateTime).toLocaleDateString() : '—';
+    const lastSync = d.lastSyncDateTime  ? new Date(d.lastSyncDateTime).toLocaleString()     : '—';
+    const ramGB    = d.physicalMemoryInBytes ? (d.physicalMemoryInBytes/1073741824).toFixed(0)+'GB' : '—';
+    const storTotal= d.totalStorageSpaceInBytes ? (d.totalStorageSpaceInBytes/1073741824).toFixed(0)+'GB' : '—';
+    const storFree = d.freeStorageSpaceInBytes  ? (d.freeStorageSpaceInBytes /1073741824).toFixed(0)+'GB' : '—';
+    const isWin    = (d.operatingSystem||'').includes('Windows');
+
+    host.innerHTML = `
+      <!-- Info grid -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+        ${[
+          ['User',       d.userDisplayName||d.userPrincipalName||'—'],
+          ['Email',      d.emailAddress||'—'],
+          ['OS',         (d.operatingSystem||'')+(d.osVersion?' '+d.osVersion:'')],
+          ['Model',      [d.manufacturer,d.model].filter(Boolean).join(' ')||'—'],
+          ['Serial',     d.serialNumber||'—'],
+          ['RAM',        ramGB],
+          ['Storage',    storTotal+' total · '+storFree+' free'],
+          ['Enrolled',   enrolled],
+          ['Last sync',  lastSync],
+          ['Management', d.managementAgent||'—'],
+          ['Join type',  d.joinType||'—'],
+          ['Azure AD ID',d.azureADDeviceId||'—'],
+        ].map(([label,val])=>`
+          <div style="background:var(--fill-quaternary);border-radius:var(--r-md);padding:10px 12px">
+            <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">${label}</div>
+            <div style="font-size:12.5px;color:var(--label);font-family:${label==='Serial'||label==='Azure AD ID'?'var(--mono)':'inherit'};word-break:break-all">${escape(String(val))}</div>
+          </div>
+        `).join('')}
+      </div>
+
+      <!-- Encryption + actions -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="background:${d.isEncrypted?'rgba(48,209,88,0.08)':'rgba(255,69,58,0.08)'};border:0.5px solid ${d.isEncrypted?'rgba(48,209,88,0.2)':'rgba(255,69,58,0.2)'};border-radius:var(--r-full);padding:6px 14px;font-size:12px;font-weight:600;color:${d.isEncrypted?'var(--sys-green)':'var(--sys-red)'}">
+          ${d.isEncrypted?(isWin?'🔒 BitLocker ON':'🔒 Encrypted'):'🔓 Not encrypted'}
+        </div>
+        ${isWin && d.isEncrypted ? `
+          <button onclick="dismissSheet();showBitLockerKey('${d.id}','${d.azureADDeviceId||d.id}','${escape(d.deviceName||'')}')"
+            style="padding:6px 14px;border-radius:var(--r-full);border:0.5px solid rgba(100,210,255,0.3);background:rgba(100,210,255,0.08);color:var(--sys-cyan);font-size:12px;font-weight:600;cursor:pointer">
+            🔑 Get BitLocker Key
+          </button>
+        ` : ''}
+        <button onclick="if(confirm('Sync ${escape(d.deviceName||'')}?'))runIntuneAction('sync','${d.id}','${escape(d.deviceName||'')}')"
+          style="padding:6px 14px;border-radius:var(--r-full);border:0.5px solid var(--sep);background:var(--fill-secondary);color:var(--label-2);font-size:12px;cursor:pointer">
+          ⟳ Sync
+        </button>
+        <button onclick="if(confirm('Retire ${escape(d.deviceName||'')}? This removes company data.'))runIntuneAction('retire','${d.id}','${escape(d.deviceName||'')}')"
+          style="padding:6px 14px;border-radius:var(--r-full);border:0.5px solid rgba(255,159,10,0.3);color:var(--sys-orange);font-size:12px;cursor:pointer">
+          Retire
+        </button>
+        <button onclick="if(confirm('⚠️ WIPE ${escape(d.deviceName||'')}? ALL data erased!'))runIntuneAction('wipe','${d.id}','${escape(d.deviceName||'')}')"
+          style="padding:6px 14px;border-radius:var(--r-full);border:0.5px solid rgba(255,69,58,0.3);color:var(--sys-red);font-size:12px;cursor:pointer">
+          Wipe
+        </button>
+      </div>
+
+      <!-- Failing policies -->
+      ${failingPolicies?.length ? `
+        <div style="margin-bottom:8px">
+          <div style="font-size:12px;font-weight:700;color:var(--sys-red);margin-bottom:8px">⚠ Failing Compliance Policies (${failingPolicies.length})</div>
+          ${failingPolicies.map(p=>`
+            <div style="background:rgba(255,69,58,0.06);border:0.5px solid rgba(255,69,58,0.2);border-radius:var(--r-md);padding:10px 12px;margin-bottom:6px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div style="font-size:13px;font-weight:600;color:var(--label)">${escape(p.displayName||p.id)}</div>
+                <span style="background:rgba(255,69,58,0.12);color:var(--sys-red);padding:2px 8px;border-radius:var(--r-full);font-size:10px;font-weight:700">${(p.state||'').toUpperCase()}</span>
+              </div>
+              ${p.settingSummary?.length?`<div style="font-size:11px;color:var(--label-3);margin-top:4px">${escape(p.settingSummary.slice(0,3).map(s=>s.settingName||s.setting||s).join(' · '))}</div>`:''}
+            </div>
+          `).join('')}
+        </div>
+      ` : `<div style="background:rgba(48,209,88,0.06);border:0.5px solid rgba(48,209,88,0.2);border-radius:var(--r-md);padding:10px 14px;font-size:13px;color:var(--sys-green)">✓ All compliance policies passing</div>`}
+    `;
+  } catch(e) {
+    const host = document.getElementById('intuneDetailContent');
+    if(host) host.innerHTML = `<div style="color:var(--sys-red);padding:20px;text-align:center;font-size:13px">Failed: ${escape(e.message)}</div>`;
+  }
+}
+
+// Show policies sheet from device list
+async function showIntunePolicies(deviceId, deviceName) {
+  showIntuneDeviceDetail(deviceId, deviceName);
+}
+
+// BitLocker key lookup from TICKET context (add button to existing panel)
+async function lookupBitLockerFromTicket(deviceId, azureDeviceId, deviceName, ticketId) {
+  showBitLockerKey(deviceId, azureDeviceId, deviceName);
+}
 
 // ============================================================
 // WIRING
@@ -7957,6 +8458,7 @@ async function loadIntuneAndSCContext(ticketId, ticket) {
         const compColor = compState === "compliant" ? "var(--ok)" : compState === "noncompliant" ? "var(--danger)" : compState === "inGracePeriod" ? "var(--warn)" : "var(--ink-dim)";
         const compBg = compState === "compliant" ? "var(--ok-dim)" : compState === "noncompliant" ? "var(--danger-dim)" : "var(--warn-dim)";
         const mgmtLabel = d.managementAgent === "mdm" ? "MDM" : d.managementAgent === "configurationManagerClientMdm" ? "Co-managed" : d.managementAgent || "Unknown";
+        const isWin = (d.operatingSystem||"").includes("Windows");
         return `
           <div style="background:var(--panel-2);border:1px solid ${compState==="noncompliant"?"var(--danger)":compState==="inGracePeriod"?"var(--warn)":"var(--border)"};border-left:3px solid ${compColor};border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
@@ -7986,6 +8488,7 @@ async function loadIntuneAndSCContext(ticketId, ticket) {
             </div>` : ""}
             <div id="intunePolicy_${d.id}" style="margin-bottom:8px"></div>
             <div style="display:flex;gap:5px" onclick="event.stopPropagation()">
+              ${isWin ? `<button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--sys-cyan);border-color:rgba(100,210,255,0.3)" onclick="showBitLockerKey('${d.id}','${d.id}','${(d.deviceName||"").replace(/'/g,\"\\\\'\")}')">🔑 BitLocker</button>` : ""}
               <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px" onclick="runIntuneAction('sync','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">⟳ Sync</button>
               <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--warn);border-color:var(--warn)" onclick="if(confirm('Retire ${(d.deviceName||"device").replace(/'/g,"\\'")}? This removes company data.'))runIntuneAction('retire','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">Retire</button>
               <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--danger);border-color:var(--danger)" onclick="if(confirm('⚠️ WIPE ${(d.deviceName||"device").replace(/'/g,"\\'")}? ALL data will be erased!'))runIntuneAction('wipe','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">Wipe</button>
@@ -8364,6 +8867,8 @@ setInterval(updateClock,1000); updateClock();
   await fetchTickets();
   // Auto-refresh every 60 seconds
   setInterval(()=>fetchTickets({silent:true}), 60000);
+})();
+s({silent:true}), 60000);
 })();
 </script>
 </body>
