@@ -1463,8 +1463,7 @@
         </div>
       </div>
 
-    </div>
-
+    </div><!-- /retrieverSection -->
 
     <!-- ══ INTUNE SECTION (hidden by default) ══ -->
     <div id="intuneSection" style="display:none">
@@ -4108,7 +4107,7 @@ function switchMode(mode){
   // Trigger data load for each tab (wrapped in try/catch so one failure can't block others)
   try { if(mode==="standup")   renderStandup(); }   catch(e){ console.error("standup:",e); }
   try { if(mode==="patterns" && !PATTERNS.length) detectPatterns(); } catch(e){ console.error("patterns:",e); }
-  try { if(mode==="devices")   loadDevices(); }     catch(e){ console.error("devices:",e); }
+  try { if(mode==="devices")  { switchDeviceSection('retriever'); loadDevices(); } } catch(e){ console.error("devices:",e); }
   try { if(mode==="network"  && !_merakiData) loadNetwork(); }  catch(e){ console.error("network:",e); }
   try { if(mode==="kb"       && !_kbData)    loadKB(); }        catch(e){ console.error("kb:",e); }
   try { if(mode==="analytics") renderAnalytics(); } catch(e){ console.error("analytics:",e); }
