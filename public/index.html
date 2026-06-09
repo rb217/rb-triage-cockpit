@@ -2117,7 +2117,8 @@ let TEAMS_HANDOFF_CONTEXT = null;
 // V3 state
 let M365_CONTEXT = new Map();    // ticketId -> { found, displayName, ... }
 let M365_LOADING = new Set();
-// V3 stalet PROVISIONING = new Map();    // ticketId -> { parsed, checklist, type }
+// V3 state
+let PROVISIONING = new Map();    // ticketId -> { parsed, checklist, type }
 let PROVISIONING_LOADING = new Set();
 let DRAFT_REPLIES = new Map();   // ticketId -> { reply, confidence, needsHumanReview, rationale }
 let DRAFT_LOADING = new Set();
