@@ -59,6 +59,12 @@ module.exports = async function(context, req) {
 
   const body = req.body || {};
 
+  // ── Check Anthropic key is configured ────────────────────────────────────
+  if (!process.env.ANTHROPIC_API_KEY) {
+    context.res = { status: 503, body: { error: "ANTHROPIC_API_KEY not configured in Azure SWA environment variables. Go to Azure Portal → Static Web Apps → Configuration → Add application setting: ANTHROPIC_API_KEY" } };
+    return;
+  }
+
   // ── New action-based handlers ─────────────────────────────────────────────
   if (body.action === "teams_send") {
     const { message, recipient, ticketId, ticketSubject } = body;
