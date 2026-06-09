@@ -1245,10 +1245,10 @@
 
       <div class="sb-section">
         <div class="sb-label">Scope <span class="count" id="totalCount">0</span></div>
-        <button class="filter-btn active" data-scope="mine">Assigned to me <span class="num" id="cnt-mine">0</span></button>
+        <button class="filter-btn" data-scope="mine">Assigned to me <span class="num" id="cnt-mine">0</span></button>
         <button class="filter-btn" data-scope="team">IT team group <span class="num" id="cnt-team">0</span></button>
         <button class="filter-btn" data-scope="unassigned">Unassigned <span class="num" id="cnt-unassigned">0</span></button>
-        <button class="filter-btn" data-scope="all">All open <span class="num" id="cnt-all">0</span></button>
+        <button class="filter-btn active" data-scope="all">All open <span class="num" id="cnt-all">0</span></button>
       </div>
 
       <div class="sb-section">
@@ -2176,7 +2176,7 @@ let PROVISIONING_LOADING = new Set();
 let DRAFT_REPLIES = new Map();   // ticketId -> { reply, confidence, needsHumanReview, rationale }
 let DRAFT_LOADING = new Set();
 let AUTO_REPLY_SETTINGS = null;  // loaded lazily
-let FILTERS = { scope:"mine", status:"all", prio:"all", aging:"all", group:"none", search:"" };
+let FILTERS = { scope:"all",  status:"all", prio:"all", aging:"all", group:"none", search:"" };
 let CURRENT_MODE = "triage";
 
 // ============================================================
@@ -3962,8 +3962,9 @@ async function detectPatterns(){
     updateCounts();
     renderList();
   }catch(e){
-    console.error(e);
-    host.innerHTML = `<div style="padding:40px;color:var(--sys-red);text-align:center;font-size:13px">Pattern analysis failed: ${escape(e.message)}<br><button class="btn" style="margin-top:12px" onclick="detectPatterns()">Try again</button></div>`;
+    console.warn("Pattern detection failed:", e.message);
+    PATTERNS = [];
+    if(host) host.innerHTML = `<div style="padding:40px;color:var(--label-3);text-align:center;font-size:13px">⚠ Pattern analysis unavailable<br><small style="color:var(--label-3)">${escape(e.message)}</small><br><button class="btn ghost" style="margin-top:12px" onclick="detectPatterns()">Retry</button></div>`;
   }
 }
 
@@ -4154,20 +4155,24 @@ async function fetchTickets({silent=false}={}){
       return;
     }
     if(res.status === 403){
-      // Not authorized — role not assigned yet
-      setConn("Fs", "access denied", "alert");
-      const list = document.getElementById("ticketList");
-      if(list) list.innerHTML = `
-        <div style="padding:40px 20px;text-align:center">
-          <div style="font-size:32px;margin-bottom:14px">🔒</div>
-          <div style="font-size:16px;font-weight:600;color:var(--label);margin-bottom:8px">Access Denied</div>
-          <div style="font-size:13px;color:var(--label-2);line-height:1.6;margin-bottom:16px">
-            Your account doesn't have the <code style="background:var(--fill-secondary);padding:1px 6px;border-radius:4px">itteam</code> role assigned.<br>
-            Ask your Azure admin to assign it via:<br>
-            <strong>Azure Portal → Static Web Apps → rb-triage-cockpit → Role management</strong>
-          </div>
-          <button class="btn" onclick="window.location.href='/.auth/logout'" style="font-size:12px">Sign out and try again</button>
-        </div>`;
+      setConn("Fs", "403 — no itteam role", "alert");
+      const msg = `<div style="padding:40px 20px;text-align:center">
+        <div style="font-size:32px;margin-bottom:14px">🔒</div>
+        <div style="font-size:16px;font-weight:600;color:var(--label);margin-bottom:8px">Access Denied (403)</div>
+        <div style="font-size:13px;color:var(--label-2);line-height:1.6;margin-bottom:16px">
+          Your account is signed in but doesn't have the <strong>itteam</strong> role.<br><br>
+          Fix: Azure Portal → Static Web Apps → rb-triage-cockpit → Role management → Invite → role: <strong>itteam</strong><br>
+          Then accept the invite link and sign out/in.
+        </div>
+        <button class="btn" onclick="window.location.href='/.auth/logout'" style="font-size:12px">Sign out</button>
+        <button class="btn ghost" onclick="window.location.href='/.auth/login/aad'" style="font-size:12px;margin-left:8px">Re-login</button>
+      </div>`;
+      document.getElementById("ticketList").innerHTML = msg;
+      // Also show on every other tab
+      ["mainStandup","mainPatterns","mainDevices","mainNetwork","mainKb","mainAnalytics","mainFleet"].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.innerHTML = msg;
+      });
       return;
     }
     if(!res.ok) throw new Error("API "+res.status);
@@ -4186,7 +4191,10 @@ async function fetchTickets({silent=false}={}){
     _timelineLoaded.clear();
     _deviceCtxCache.clear();
     // Auto-detect patterns silently on every refresh
-    setTimeout(() => detectPatterns(), 2000);
+    // Only run pattern detection if we have enough tickets and haven't run recently
+    const _lastPatternRun = (() => { try { return sessionStorage.getItem('patterns_last_run'); } catch(e){ return null; } })();
+    const _minutesSinceLast = _lastPatternRun ? Math.floor((Date.now()-new Date(_lastPatternRun))/60000) : 999;
+    if(TICKETS.length >= 3 && _minutesSinceLast > 10) setTimeout(() => detectPatterns(), 2000);
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
     const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
@@ -4205,7 +4213,15 @@ async function fetchTickets({silent=false}={}){
     if(!silent) toast(`Loaded ${TICKETS.length} open · ${CLOSED_TICKETS.length} closed`);
   } catch(e){
     setConn("Fs", "error: "+e.message, "alert");
-    toast("Fetch failed: "+e.message,"error");
+    toast("Fetch failed: "+e.message, "error");
+    // Show error in ticket list too
+    const list = document.getElementById("ticketList");
+    if(list) list.innerHTML = `<div style="padding:40px 20px;text-align:center;color:var(--label-2)">
+      <div style="font-size:28px;margin-bottom:10px">⚠️</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Could not load tickets</div>
+      <div style="font-size:12px;color:var(--label-3);font-family:var(--mono)">${e.message}</div>
+      <button class="btn" style="margin-top:14px" onclick="fetchTickets()">↻ Retry</button>
+    </div>`;
   }
 }
 
@@ -5316,7 +5332,12 @@ async function loadDevices() {
     _retrieverData = await res.json();
     renderDevicesTab(_retrieverData);
   } catch(err) {
-    [wl, rl, dl].forEach(el => el.innerHTML = `<div style="text-align:center;padding:30px;color:var(--danger);font-size:13px">Failed to load: ${err.message}</div>`);
+    [wl, rl, dl].forEach(el => el.innerHTML = `<div style="text-align:center;padding:30px">
+      <div style="font-size:24px;margin-bottom:10px;opacity:.4">📦</div>
+      <div style="color:var(--sys-red);font-size:13px;font-weight:600;margin-bottom:6px">Retriever unavailable</div>
+      <div style="color:var(--label-3);font-size:11px;margin-bottom:10px">${escape(err.message)}</div>
+      <button class="btn ghost" style="font-size:11px" onclick="loadDevices()">↻ Retry</button>
+    </div>`);
   }
 }
 
@@ -8842,6 +8863,12 @@ setInterval(updateClock,1000); updateClock();
   }
   LAST_SEEN_TIMESTAMP = await storeGet("last_seen_ts");
   await loadPrincipal();
+  // Show a temporary loading indicator
+  const ticketList = document.getElementById("ticketList");
+  if(ticketList) ticketList.innerHTML = `<div style="padding:60px 20px;text-align:center;color:var(--label-2)">
+    <div class="loader" style="margin:0 auto 14px"></div>
+    <div style="font-size:14px">Connecting to Freshservice…</div>
+  </div>`;
 
   // Wire command palette events
 
