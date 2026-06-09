@@ -1227,11 +1227,11 @@
     <button class="modetab active" data-mode="triage">Triage</button>
     <button class="modetab" data-mode="standup">Standup <span class="badge" id="standupBadge">0</span></button>
     <button class="modetab" data-mode="patterns">Patterns <span class="badge" id="patternsBadge">0</span></button>
-    <button class="modetab" data-mode="devices">Devices</button>
+    <button class="modetab" data-mode="devices">Retriever</button>
     <button class="modetab" data-mode="network">Network</button>
     <button class="modetab" data-mode="kb">Knowledge</button>
     <button class="modetab" data-mode="analytics">Analytics</button>
-    <button class="modetab" data-mode="fleet">Mac Fleet</button>
+    <button class="modetab" data-mode="endpoint">Endpoint</button>
   </nav>
 
   <div class="main" id="mainTriage">
@@ -1332,28 +1332,16 @@
   <div class="hidden" id="mainDevices" style="overflow-y:auto;padding:20px 24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div>
-        <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">Device Management</h2>
-        <div style="font-size:13px;color:var(--label-3);margin-top:3px">Retriever · Intune · BitLocker</div>
+        <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.3px">Retriever</h2>
+        <div style="font-size:13px;color:var(--label-3);margin-top:3px">Warehouse · Returns · Deployments</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <!-- Sub-tab toggle -->
-        <div style="display:flex;gap:2px;background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-full);padding:3px">
-          <button id="devTabRetriever" onclick="switchDeviceSection('retriever')"
-            style="padding:4px 14px;border-radius:var(--r-full);font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--sys-blue);color:#fff;transition:.15s">
-            📦 Retriever
-          </button>
-          <button id="devTabIntune" onclick="switchDeviceSection('intune')"
-            style="padding:4px 14px;border-radius:var(--r-full);font-size:12px;font-weight:600;border:none;cursor:pointer;background:transparent;color:var(--label-2);transition:.15s">
-            🖥 Intune
-          </button>
-        </div>
         <button class="btn" id="newReturnBtn">📦 New Return</button>
         <button class="btn primary" id="newDeployBtn">🚀 Deploy</button>
-        <button class="btn ghost" id="refreshDevicesBtn" onclick="refreshCurrentDeviceSection()">⟳</button>
+        <button class="btn ghost" id="refreshDevicesBtn" onclick="loadDevices()">⟳</button>
       </div>
     </div>
 
-    <div id="retrieverSection">
     <!-- Balances strip -->
     <div id="balancesStrip" style="display:flex;gap:10px;margin-bottom:16px"></div>
 
@@ -1463,72 +1451,6 @@
         </div>
       </div>
 
-    </div><!-- /retrieverSection -->
-
-    <!-- ══ INTUNE SECTION (hidden by default) ══ -->
-    <div id="intuneSection" style="display:none">
-
-      <!-- Summary strip -->
-      <div id="intuneSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px">
-        <div style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);padding:12px 14px;text-align:center">
-          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--label)" id="intune-total">—</div>
-          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Total</div>
-        </div>
-        <div style="background:rgba(48,209,88,0.06);border:0.5px solid rgba(48,209,88,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
-          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-green)" id="intune-compliant">—</div>
-          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Compliant</div>
-        </div>
-        <div style="background:rgba(255,69,58,0.06);border:0.5px solid rgba(255,69,58,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
-          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-red)" id="intune-noncompliant">—</div>
-          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Non-compliant</div>
-        </div>
-        <div style="background:rgba(100,210,255,0.06);border:0.5px solid rgba(100,210,255,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
-          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-cyan)" id="intune-encrypted">—</div>
-          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Encrypted %</div>
-        </div>
-        <div style="background:rgba(255,159,10,0.06);border:0.5px solid rgba(255,159,10,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center">
-          <div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-orange)" id="intune-stale">—</div>
-          <div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Stale (7d+)</div>
-        </div>
-      </div>
-
-      <!-- Search + filter bar -->
-      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
-        <div style="position:relative;flex:1">
-          <input id="intuneSearch" type="text" placeholder="Search device name, user, serial…"
-            oninput="filterIntuneDevices()"
-            style="width:100%;background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px 8px 32px;font-size:13px;outline:none;box-sizing:border-box"/>
-          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--label-3);font-size:14px">🔍</span>
-        </div>
-        <select id="intuneOsFilter" onchange="filterIntuneDevices()"
-          style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px;font-size:12px;outline:none">
-          <option value="">All OS</option>
-          <option value="Windows">Windows</option>
-          <option value="macOS">macOS</option>
-          <option value="iOS">iOS/iPadOS</option>
-          <option value="Android">Android</option>
-        </select>
-        <select id="intuneCompFilter" onchange="filterIntuneDevices()"
-          style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px;font-size:12px;outline:none">
-          <option value="">All compliance</option>
-          <option value="compliant">Compliant</option>
-          <option value="noncompliant">Non-compliant</option>
-          <option value="inGracePeriod">Grace period</option>
-          <option value="unknown">Unknown</option>
-        </select>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--label-2);cursor:pointer;white-space:nowrap">
-          <input type="checkbox" id="intuneEncFilter" onchange="filterIntuneDevices()" style="accent-color:var(--sys-blue)"/>
-          Unencrypted only
-        </label>
-      </div>
-
-      <!-- Device grid -->
-      <div id="intuneDeviceList" style="display:flex;flex-direction:column;gap:6px">
-        <div style="text-align:center;padding:60px 20px;color:var(--label-3)">
-          <div style="font-size:32px;margin-bottom:10px;opacity:.3">🖥</div>
-          <div style="font-size:15px;font-weight:600;color:var(--label-2)">Click Intune tab to load devices</div>
-        </div>
-      </div>
 
     </div>
   </div>
@@ -1611,6 +1533,7 @@
     ${["Hardware","Software","Network","NetSuite","Onboarding"].map(c=>`
       <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('${c.toLowerCase()}'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">${c}</button>
     `).join("")}
+    </div><!-- /endpointKandjiSection -->
   </div>
 
   <!-- Stats strip -->
@@ -1667,7 +1590,7 @@
 </div>
 
 <!-- MAC FLEET VIEW -->
-<div class="hidden" id="mainFleet" style="overflow-y:auto;padding:20px 24px">
+<div class="hidden" id="mainEndpoint" style="overflow-y:auto;padding:20px 24px">
 
   <!-- Header -->
   <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:20px">
@@ -1681,6 +1604,29 @@
     </div>
   </div>
 
+
+    <!-- ══ INTUNE SECTION ══ -->
+    <div id="endpointIntuneSection">
+      <div id="intuneSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px">
+        <div style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);padding:12px 14px;text-align:center"><div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--label)" id="intune-total">—</div><div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Total</div></div>
+        <div style="background:rgba(48,209,88,0.06);border:0.5px solid rgba(48,209,88,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center"><div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-green)" id="intune-compliant">—</div><div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Compliant</div></div>
+        <div style="background:rgba(255,69,58,0.06);border:0.5px solid rgba(255,69,58,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center"><div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-red)" id="intune-noncompliant">—</div><div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Non-compliant</div></div>
+        <div style="background:rgba(100,210,255,0.06);border:0.5px solid rgba(100,210,255,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center"><div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-cyan)" id="intune-encrypted">—</div><div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Encrypted %</div></div>
+        <div style="background:rgba(255,159,10,0.06);border:0.5px solid rgba(255,159,10,0.2);border-radius:var(--r-md);padding:12px 14px;text-align:center"><div style="font-size:24px;font-weight:800;letter-spacing:-1px;color:var(--sys-orange)" id="intune-stale">—</div><div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Stale (7d+)</div></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <div style="position:relative;flex:1"><input id="intuneSearch" type="text" placeholder="Search device name, user, serial…" oninput="filterIntuneDevices()" style="width:100%;background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px 8px 32px;font-size:13px;outline:none;box-sizing:border-box"/><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--label-3);font-size:14px">🔍</span></div>
+        <select id="intuneOsFilter" onchange="filterIntuneDevices()" style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px;font-size:12px;outline:none"><option value="">All OS</option><option value="Windows">Windows</option><option value="macOS">macOS</option><option value="iOS">iOS/iPadOS</option><option value="Android">Android</option></select>
+        <select id="intuneCompFilter" onchange="filterIntuneDevices()" style="background:var(--fill-quaternary);border:0.5px solid var(--sep);border-radius:var(--r-md);color:var(--label);padding:8px 12px;font-size:12px;outline:none"><option value="">All compliance</option><option value="compliant">Compliant</option><option value="noncompliant">Non-compliant</option><option value="inGracePeriod">Grace period</option><option value="unknown">Unknown</option></select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--label-2);cursor:pointer;white-space:nowrap"><input type="checkbox" id="intuneEncFilter" onchange="filterIntuneDevices()" style="accent-color:var(--sys-blue)"/> Unencrypted only</label>
+      </div>
+      <div id="intuneDeviceList" style="display:flex;flex-direction:column;gap:6px">
+        <div style="text-align:center;padding:60px 20px;color:var(--label-3)"><div style="font-size:32px;margin-bottom:10px;opacity:.3">🖥</div><div style="font-size:15px;font-weight:600;color:var(--label-2)">Loading Intune devices…</div></div>
+      </div>
+    </div>
+
+    <!-- ══ KANDJI SECTION ══ -->
+    <div id="endpointKandjiSection" style="display:none">
   <!-- Compliance summary strip -->
   <div id="fleetSummaryStrip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px"></div>
 
@@ -2170,8 +2116,8 @@ let LAST_SEEN_TIMESTAMP = null; // for "what's new" detection
 let TEAMS_HANDOFF_CONTEXT = null;
 // V3 state
 let M365_CONTEXT = new Map();    // ticketId -> { found, displayName, ... }
-let M365_LOADING = new Set();    // ticketIds currently fetching context
-let PROVISIONING = new Map();    // ticketId -> { parsed, checklist, type }
+let M365_LOADING = new Set();
+// V3 stalet PROVISIONING = new Map();    // ticketId -> { parsed, checklist, type }
 let PROVISIONING_LOADING = new Set();
 let DRAFT_REPLIES = new Map();   // ticketId -> { reply, confidence, needsHumanReview, rationale }
 let DRAFT_LOADING = new Set();
@@ -4097,7 +4043,7 @@ function switchMode(mode){
   // Update tab active state
   $$(".modetab").forEach(t=>t.classList.toggle("active", t.dataset.mode===mode));
   // Show/hide all panels
-  const panels = ["triage","standup","patterns","devices","network","kb","analytics","fleet"];
+  const panels = ["triage","standup","patterns","devices","endpoint","network","kb","analytics"];
   panels.forEach(p => {
     const id = "main"+p.charAt(0).toUpperCase()+p.slice(1);
     const el = $("#"+id);
@@ -4109,11 +4055,12 @@ function switchMode(mode){
   // Trigger data load for each tab (wrapped in try/catch so one failure can't block others)
   try { if(mode==="standup")   renderStandup(); }   catch(e){ console.error("standup:",e); }
   try { if(mode==="patterns" && !PATTERNS.length) detectPatterns(); } catch(e){ console.error("patterns:",e); }
-  try { if(mode==="devices")  { switchDeviceSection('retriever'); loadDevices(); } } catch(e){ console.error("devices:",e); }
+  try { if(mode==="devices")   loadDevices(); } catch(e){ console.error("devices:",e); }
+  try { if(mode==="endpoint")  loadEndpointSection(); } catch(e){ console.error("endpoint:",e); }
   try { if(mode==="network"  && !_merakiData) loadNetwork(); }  catch(e){ console.error("network:",e); }
   try { if(mode==="kb"       && !_kbData)    loadKB(); }        catch(e){ console.error("kb:",e); }
   try { if(mode==="analytics") renderAnalytics(); } catch(e){ console.error("analytics:",e); }
-  try { if(mode==="fleet"    && !_fleetData)  loadFleet(); }    catch(e){ console.error("fleet:",e); }
+
 }
 
 // ============================================================
@@ -4269,6 +4216,110 @@ function openModal(id){$("#"+id).classList.add("open")}
 function closeModal(id){$("#"+id).classList.remove("open")}
 
 
+
+
+// ============================================================
+// ENDPOINT TAB — Intune + Kandji
+// ============================================================
+let _endpointSection = 'intune';
+
+function switchEndpointSection(section) {
+  _endpointSection = section;
+  const intuneEl = document.getElementById('endpointIntuneSection');
+  const kandjiEl = document.getElementById('endpointKandjiSection');
+  const btnI = document.getElementById('epTabIntune');
+  const btnK = document.getElementById('epTabKandji');
+  if(section === 'intune') {
+    if(intuneEl) intuneEl.style.display = '';
+    if(kandjiEl) kandjiEl.style.display = 'none';
+    if(btnI){ btnI.style.background='var(--sys-blue)'; btnI.style.color='#fff'; }
+    if(btnK){ btnK.style.background='transparent'; btnK.style.color='var(--label-2)'; }
+    if(!_intuneDevices) loadIntuneDevices();
+  } else {
+    if(intuneEl) intuneEl.style.display = 'none';
+    if(kandjiEl) kandjiEl.style.display = '';
+    if(btnK){ btnK.style.background='var(--sys-blue)'; btnK.style.color='#fff'; }
+    if(btnI){ btnI.style.background='transparent'; btnI.style.color='var(--label-2)'; }
+    loadEndpointKandji();
+  }
+}
+
+function loadEndpointSection() {
+  if(_endpointSection === 'kandji') loadEndpointKandji();
+  else { if(!_intuneDevices) loadIntuneDevices(); }
+}
+
+function refreshEndpointSection() {
+  if(_endpointSection === 'kandji') { loadEndpointKandji(); }
+  else { _intuneDevices = null; loadIntuneDevices(); }
+}
+
+async function loadEndpointKandji() {
+  // Reuse loadFleet but redirect output to endpointKandjiSection
+  const kandjiEl = document.getElementById('endpointKandjiSection');
+  if(!kandjiEl) return;
+  // Temporarily swap the fleet host for loading - just call loadFleet
+  // which targets mainFleet content - instead render directly
+  kandjiEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:20px;color:var(--label-2);font-size:13px"><div class="loader" style="width:16px;height:16px;border-width:2px"></div>Loading Kandji fleet…</div>`;
+  try {
+    const res = await fetch('/api/kandji?action=fleet');
+    if(!res.ok) throw new Error('HTTP '+res.status+' — check KANDJI_API_KEY in Azure config');
+    const data = await res.json();
+    const devices = data.devices || [];
+    renderKandjiSection(kandjiEl, devices);
+  } catch(e) {
+    kandjiEl.innerHTML = `<div style="text-align:center;padding:40px;color:var(--label-3)">
+      <div style="font-size:28px;margin-bottom:10px">⚠️</div>
+      <div style="font-size:14px;font-weight:600;color:var(--label-2);margin-bottom:6px">Kandji unavailable</div>
+      <div style="font-size:12px;margin-bottom:12px">${escape(e.message)}</div>
+      <button class="btn ghost" onclick="loadEndpointKandji()">↻ Retry</button>
+    </div>`;
+  }
+}
+
+function renderKandjiSection(host, devices) {
+  if(!devices.length) {
+    host.innerHTML = `<div style="text-align:center;padding:60px;color:var(--label-3)"><div style="font-size:32px;margin-bottom:10px;opacity:.3">🍎</div><div>No Mac devices found in Kandji</div></div>`;
+    return;
+  }
+  const compliant = devices.filter(d=>d._compliance?.compliant).length;
+  const fvOn = devices.filter(d=>d.filevault_enabled).length;
+  const stale = devices.filter(d=>{
+    if(!d.last_check_in) return true;
+    return Math.floor((Date.now()-new Date(d.last_check_in))/86400000) >= 7;
+  }).length;
+  host.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+      ${[
+        {l:'Total Macs',   v:devices.length, c:'var(--label)',      b:'var(--fill-quaternary)'},
+        {l:'Compliant',    v:compliant,       c:'var(--sys-green)',  b:'rgba(48,209,88,0.06)'},
+        {l:'FileVault ON', v:fvOn,            c:'var(--sys-cyan)',   b:'rgba(100,210,255,0.06)'},
+        {l:'Stale (7d+)',  v:stale,           c:'var(--sys-orange)', b:'rgba(255,159,10,0.06)'},
+      ].map(s=>`<div style="background:${s.b};border:0.5px solid ${s.c}33;border-radius:var(--r-md);padding:12px;text-align:center"><div style="font-size:26px;font-weight:800;letter-spacing:-1px;color:${s.c}">${s.v}</div><div style="font-size:10px;color:var(--label-3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">${s.l}</div></div>`).join('')}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${devices.map(d=>{
+        const daysAgo = d.last_check_in ? Math.floor((Date.now()-new Date(d.last_check_in))/86400000) : 999;
+        const sc = daysAgo<=1?'var(--sys-green)':daysAgo<=7?'var(--sys-orange)':'var(--sys-red)';
+        const sl = daysAgo===0?'today':daysAgo===999?'never':daysAgo+'d ago';
+        const nc = d._compliance?.compliant===false;
+        return `<div style="background:var(--fill-quaternary);border:0.5px solid ${nc?'rgba(255,69,58,0.3)':'var(--sep)'};border-radius:var(--r-md);padding:11px 14px;display:flex;align-items:center;gap:12px">
+          <div style="font-size:22px">🍎</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13.5px;font-weight:600;color:var(--label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(d.device_name||'Unknown')}</div>
+            <div style="font-size:11.5px;color:var(--label-2);margin-top:2px">${escape(d.model||'')} · macOS ${escape((d.os_version||'').split('.').slice(0,2).join('.'))}</div>
+          </div>
+          <div style="display:flex;gap:5px;align-items:center;flex-shrink:0">
+            <span style="font-size:10.5px;color:${d.filevault_enabled?'var(--sys-green)':'var(--sys-red)'};background:${d.filevault_enabled?'rgba(48,209,88,0.08)':'rgba(255,69,58,0.08)'};padding:2px 8px;border-radius:var(--r-full)">${d.filevault_enabled?'🔒 FileVault':'🔓 No FV'}</span>
+            <span style="font-size:10.5px;color:${sc};background:${sc}18;padding:2px 8px;border-radius:var(--r-full)">🕐 ${sl}</span>
+            ${nc?'<span style="font-size:10px;font-weight:700;color:var(--sys-red);background:rgba(255,69,58,0.1);padding:2px 8px;border-radius:var(--r-full)">⚠ NON-COMPLIANT</span>':''}
+          </div>
+          <button onclick="runMdmAction('checkin','${d.device_id}','${escape(d.device_name||'')}')" style="padding:5px 10px;border-radius:var(--r-md);border:0.5px solid var(--sep);background:var(--fill-secondary);color:var(--label-2);font-size:11px;cursor:pointer;flex-shrink:0">⟳ Check-in</button>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
 
 // ============================================================
 // INTUNE — FULL DEVICE MANAGEMENT
@@ -8449,9 +8500,6 @@ const MDM_RUNBOOKS = [
 // Patch MDM runbooks into the runbook execution engine
 const _origRunStep = window._runStep;// MDM runbooks are merged in via loadRunbooks override below
 // Mac Fleet tab mode switch
-document.querySelector('[data-mode="fleet"]')?.addEventListener("click", () => {
-  if (!_fleetData) loadFleet();
-});
 
 // ============================================================
 // INTUNE + SCREENCONNECT — combined loader
