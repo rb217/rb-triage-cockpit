@@ -3873,6 +3873,11 @@ async function generateAIQueue(candidates){
 // ============================================================
 async function detectPatterns(){
   const host = $("#mainPatterns");
+  if(!AI_ENABLED){
+    if(host) host.innerHTML = `<div style="padding:60px 24px;text-align:center;color:var(--label-3)"><div style="font-size:28px;margin-bottom:12px;opacity:.4">⚡</div><div style="font-size:15px;font-weight:600;color:var(--label-2)">AI features not configured</div><div style="font-size:12px;margin-top:6px">Pattern detection requires the Anthropic API key.<br>Add <code style="background:var(--fill-secondary);padding:1px 6px;border-radius:4px">ANTHROPIC_API_KEY</code> in Azure SWA configuration.</div></div>`;
+    PATTERNS = []; renderPatterns(); updateCounts();
+    return;
+  }
   if(TICKETS.length < 3){
     PATTERNS = [];
     renderPatterns();
@@ -8940,10 +8945,10 @@ setInterval(updateClock,1000); updateClock();
     if (e.key === "Escape")    { closeCmdPalette(); }
   });
   
-  // Check if AI features are available
+  // Check if AI features are available (silently)
   try {
-    const aiCheck = await fetch('/api/aiTriage', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'ping'}) });
-    if(aiCheck.status === 503) {
+    const aiCheck = await fetch('/api/aiTriage', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'ping'}) }).catch(()=>({status:503}));
+    if(aiCheck.status === 503 || aiCheck.status === 500) {
       AI_ENABLED = false;
       // Grey out AI buttons
       ['aiTriageBtn','openSettingsBtn'].forEach(id => {
