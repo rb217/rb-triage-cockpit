@@ -2142,6 +2142,7 @@
       </div>
     
 // ============================================================
+<script>
 // CONFIG
 // ============================================================
 const ME = {
@@ -8488,7 +8489,6 @@ async function loadIntuneAndSCContext(ticketId, ticket) {
             </div>` : ""}
             <div id="intunePolicy_${d.id}" style="margin-bottom:8px"></div>
             <div style="display:flex;gap:5px" onclick="event.stopPropagation()">
-              ${isWin ? `<button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--sys-cyan);border-color:rgba(100,210,255,0.3)" onclick="showBitLockerKey('${d.id}','${d.id}','${(d.deviceName||"").replace(/'/g,\"\\\\'\")}')">🔑 BitLocker</button>` : ""}
               <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px" onclick="runIntuneAction('sync','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">⟳ Sync</button>
               <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--warn);border-color:var(--warn)" onclick="if(confirm('Retire ${(d.deviceName||"device").replace(/'/g,"\\'")}? This removes company data.'))runIntuneAction('retire','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">Retire</button>
               <button class="btn" style="flex:1;justify-content:center;font-size:11px;padding:4px;color:var(--danger);border-color:var(--danger)" onclick="if(confirm('⚠️ WIPE ${(d.deviceName||"device").replace(/'/g,"\\'")}? ALL data will be erased!'))runIntuneAction('wipe','${d.id}','${(d.deviceName||"").replace(/'/g,"\\'")}')">Wipe</button>
@@ -8867,8 +8867,6 @@ setInterval(updateClock,1000); updateClock();
   await fetchTickets();
   // Auto-refresh every 60 seconds
   setInterval(()=>fetchTickets({silent:true}), 60000);
-})();
-s({silent:true}), 60000);
 })();
 </script>
 </body>
