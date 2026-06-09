@@ -4028,14 +4028,14 @@ function switchMode(mode){
   // Animate the panel coming in
   const activePanel = document.getElementById("main"+mode.charAt(0).toUpperCase()+mode.slice(1));
   if(activePanel) { activePanel.classList.remove('main-panel'); void activePanel.offsetWidth; activePanel.classList.add('main-panel'); }
-  // Trigger data load for each tab
-  if(mode==="standup")  renderStandup();
-  if(mode==="patterns" && !PATTERNS.length) detectPatterns();
-  if(mode==="devices")  loadRetriever();
-  if(mode==="network")  { if(!_merakiData) loadNetwork(); }
-  if(mode==="kb")       { if(!_kbData?.length) loadKB(); }
-  if(mode==="analytics") renderAnalytics();
-  if(mode==="fleet")    { if(!_fleetData) loadFleet(); }
+  // Trigger data load for each tab (wrapped in try/catch so one failure can't block others)
+  try { if(mode==="standup")   renderStandup(); }   catch(e){ console.error("standup:",e); }
+  try { if(mode==="patterns" && !PATTERNS.length) detectPatterns(); } catch(e){ console.error("patterns:",e); }
+  try { if(mode==="devices")   loadDevices(); }     catch(e){ console.error("devices:",e); }
+  try { if(mode==="network"  && !_merakiData) loadNetwork(); }  catch(e){ console.error("network:",e); }
+  try { if(mode==="kb"       && !_kbData)    loadKB(); }        catch(e){ console.error("kb:",e); }
+  try { if(mode==="analytics") renderAnalytics(); } catch(e){ console.error("analytics:",e); }
+  try { if(mode==="fleet"    && !_fleetData)  loadFleet(); }    catch(e){ console.error("fleet:",e); }
 }
 
 // ============================================================
@@ -6462,7 +6462,15 @@ async function renderAnalytics() {
   if (!host) return;
   const ACTIVE = new Set([2,3,6]);
   const tickets = TICKETS.filter(t => ACTIVE.has(t.status));
-  if (!tickets.length) return;
+  if (!tickets.length) {
+    host.innerHTML = `<div style="padding:80px 24px;text-align:center">
+      <div style="font-size:32px;margin-bottom:14px;opacity:.3">📊</div>
+      <div style="font-size:17px;font-weight:600;color:var(--label-2)">No ticket data yet</div>
+      <div style="font-size:13px;color:var(--label-3);margin-top:6px">Analytics will populate once tickets are loaded</div>
+      <button class="btn" style="margin-top:16px" onclick="fetchTickets()">↻ Load tickets</button>
+    </div>`;
+    return;
+  }
 
   // Resolve brands
   const brandMap = {};
