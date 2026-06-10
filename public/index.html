@@ -590,6 +590,21 @@
   }
   @keyframes badgePop { 0%{transform:scale(0.5)} 100%{transform:scale(1)} }
 
+
+  /* ══ PANEL FILL — all content panels fill the 3rd grid row ══ */
+  [id^="main"]:not(.main) {
+    grid-row: 3;
+    grid-column: 1;
+    overflow: hidden;
+    min-height: 0;
+  }
+  /* Panels that scroll vertically */
+  .standup, .pattern-list,
+  #mainNetwork, #mainKb, #mainAnalytics, #mainEndpoint,
+  #mainDevices {
+    overflow-y: auto;
+  }
+
   /* ══ LAYOUT ══ */
   .main { display: grid; grid-template-columns: 220px 1fr 440px; overflow: hidden; }
 
@@ -1879,8 +1894,9 @@
 
   <!-- Article grid -->
   <div id="kbGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:8px">
-    <div style="text-align:center;padding:60px;color:var(--label-2);font-size:13px;grid-column:1/-1">
-      <div class="loader" style="margin:0 auto 12px"></div>Loading knowledge base…
+    <div style="text-align:center;padding:60px;color:var(--label-3);font-size:13px;grid-column:1/-1">
+      <div style="font-size:28px;margin-bottom:10px;opacity:.25">📚</div>
+      <div style="font-size:14px;font-weight:600;color:var(--label-3)">Click Knowledge to load articles</div>
     </div>
   </div>
 </div>
