@@ -1883,11 +1883,12 @@
   <!-- Category filter pills -->
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
     <button onclick="renderKBGrid(_kbData)" class="btn" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">All</button>
-    ${["Hardware","Software","Network","NetSuite","Onboarding"].map(c=>`
-      <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('${c.toLowerCase()}'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">${c}</button>
-    `).join("")}
-    </div><!-- /endpointKandjiSection -->
-  </div>
+    <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('hardware'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">Hardware</button>
+    <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('software'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">Software</button>
+    <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('network'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">Network</button>
+    <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('netsuite'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">NetSuite</button>
+    <button onclick="renderKBGrid((_kbData||[]).filter(a=>(a.tags||[]).some(t=>t.toLowerCase().includes('onboarding'))))" class="btn ghost" style="font-size:11px;padding:4px 12px;border-radius:var(--r-full)">Onboarding</button>
+    </div>
 
   <!-- Stats strip -->
   <div id="kbStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px"></div>
@@ -2454,8 +2455,10 @@
         <button class="btn ghost" id="dep-preview-btn">Preview →</button>
         <button class="btn primary hidden" id="dep-confirm-btn">✓ Confirm & Deploy</button>
       </div>
-    
-// ============================================================
+    </div>
+  </div>
+</div>
+
 <script>
 // CONFIG
 // ============================================================
@@ -4517,7 +4520,7 @@ async function fetchTickets({silent=false}={}){
     // Only run pattern detection if we have enough tickets and haven't run recently
     const _lastPatternRun = (() => { try { return sessionStorage.getItem('patterns_last_run'); } catch(e){ return null; } })();
     const _minutesSinceLast = _lastPatternRun ? Math.floor((Date.now()-new Date(_lastPatternRun))/60000) : 999;
-    if(AI_ENABLED && TICKETS.length >= 3 && _minutesSinceLast > 10) setTimeout(() => detectPatterns(), 2000);
+    if(AI_ENABLED && TICKETS.length >= 3 && _minutesSinceLast > 10 && CURRENT_MODE !== 'triage') setTimeout(() => detectPatterns(), 2000);
     CLOSED_TICKETS = (data.closed || []).map(normalizeTicket);
     LAST_FETCH = data.fetchedAt;
     const activeCount = TICKETS.filter(t => [2,3,6].includes(t.status)).length;
@@ -9340,7 +9343,10 @@ setInterval(updateClock,1000); updateClock();
   
   // Check if AI features are available (silently)
   try {
-    const aiCheck = await fetch('/api/aiTriage', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'ping'}) }).catch(()=>({status:503}));
+    const aiCheck = await Promise.race([
+      fetch('/api/aiTriage', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'ping'}) }).catch(()=>({status:503})),
+      new Promise(resolve => setTimeout(() => resolve({status:503}), 3000))
+    ]);
     if(aiCheck.status === 503 || aiCheck.status === 500) {
       AI_ENABLED = false;
       // Grey out AI buttons
