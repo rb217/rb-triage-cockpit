@@ -87,7 +87,7 @@ function summarize(devices) {
   };
 }
 
-const DEVICE_SELECT = "id,deviceName,userDisplayName,userPrincipalName,emailAddress,operatingSystem,osVersion,complianceState,lastSyncDateTime,isEncrypted,model,manufacturer,serialNumber,managementAgent,enrolledDateTime,totalStorageSpaceInBytes,freeStorageSpaceInBytes";
+const DEVICE_SELECT = "id,deviceName,userDisplayName,userPrincipalName,emailAddress,operatingSystem,osVersion,complianceState,lastSyncDateTime,isEncrypted,model,manufacturer,serialNumber,managementAgent,enrolledDateTime,totalStorageSpaceInBytes,freeStorageSpaceInBytes,azureADDeviceId";
 
 module.exports = async function(context, req) {
   const principal = getPrincipal(req);
