@@ -2,15 +2,21 @@
   "routes": [
     {
       "route": "/api/webhookTicketCreated",
-      "allowedRoles": ["anonymous"]
+      "allowedRoles": [
+        "anonymous"
+      ]
     },
     {
       "route": "/api/*",
-      "allowedRoles": ["itteam"]
+      "allowedRoles": [
+        "itteam"
+      ]
     },
     {
       "route": "/*",
-      "allowedRoles": ["itteam"]
+      "allowedRoles": [
+        "itteam"
+      ]
     }
   ],
   "responseOverrides": {
@@ -41,5 +47,20 @@
   },
   "mimeTypes": {
     ".json": "application/json"
-  }
+  },
+  "customHeaders": [
+    {
+      "source": "*.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ]
 }

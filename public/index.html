@@ -5047,9 +5047,10 @@ async function showIntuneDeviceDetail(deviceId, deviceName) {
 
   try {
     const res = await fetch(`/api/intune?action=device&id=${deviceId}`);
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const { device: d, failingPolicies } = await res.json();
-    if(!d) throw new Error('No device data returned');
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(data.error || `HTTP ${res.status} — Device ID: ${deviceId}`);
+    const { device: d, failingPolicies } = data;
+    if(!d) throw new Error(data.error || 'No device data returned');
 
     const host = document.getElementById('intuneDetailContent');
     if(!host) return;
@@ -5128,7 +5129,13 @@ async function showIntuneDeviceDetail(deviceId, deviceName) {
     `;
   } catch(e) {
     const host = document.getElementById('intuneDetailContent');
-    if(host) host.innerHTML = `<div style="color:var(--sys-red);padding:20px;text-align:center;font-size:13px">Failed: ${escape(e.message)}</div>`;
+    if(host) host.innerHTML = `
+      <div style="padding:24px;text-align:center">
+        <div style="font-size:28px;margin-bottom:10px">⚠️</div>
+        <div style="font-size:14px;font-weight:600;color:var(--label);margin-bottom:6px">Could not load device</div>
+        <div style="font-size:12px;color:var(--sys-red);background:var(--danger-fill);border-radius:var(--r-md);padding:8px 12px;margin-bottom:14px;word-break:break-all">${escape(e.message)}</div>
+        <button class="btn" onclick="showIntuneDeviceDetail('${deviceId}','${escape(deviceName)}')" style="font-size:12px">↻ Retry</button>
+      </div>`;
   }
 }
 
@@ -6171,21 +6178,18 @@ if (typeof fetchTickets === "function") {
 // POPOUT SHEET UTILITY
 // ============================================================
 function showPopoutSheet(title, contentHtml, opts={}) {
-  // Remove any existing sheet
   const existing = document.getElementById('_popoutSheet');
   if(existing) existing.remove();
-
   const sheet = document.createElement('div');
   sheet.id = '_popoutSheet';
-  sheet.className = 'popout-sheet';
+  sheet.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:200;display:flex;align-items:stretch;justify-content:flex-end;';
   sheet.innerHTML = `
-    <div class="popout-sheet-body">
-      <div class="popout-sheet-handle"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px 8px">
+    <div style="background:var(--chrome-staged);backdrop-filter:saturate(180%) blur(40px);-webkit-backdrop-filter:saturate(180%) blur(40px);border-left:0.5px solid var(--sep-hot);width:460px;max-width:92vw;height:100%;overflow-y:auto;padding-bottom:32px;box-shadow:-20px 0 60px rgba(0,0,0,0.5);animation:sheetRight .3s cubic-bezier(0.25,0.46,0.45,0.94);">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px 12px;border-bottom:0.5px solid var(--sep);position:sticky;top:0;background:var(--chrome-staged);backdrop-filter:blur(20px);z-index:1">
         <div style="font-size:17px;font-weight:700;letter-spacing:-0.3px">${title}</div>
         <button onclick="dismissSheet()" style="background:var(--fill-secondary);border:0.5px solid var(--sep);color:var(--label-2);width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;display:grid;place-items:center">×</button>
       </div>
-      <div style="padding:0 20px">${contentHtml}</div>
+      <div style="padding:16px 20px">${contentHtml}</div>
     </div>
   `;
   sheet.addEventListener('click', e => { if(e.target === sheet) dismissSheet(); });

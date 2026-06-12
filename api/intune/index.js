@@ -129,8 +129,13 @@ module.exports = async function(context, req) {
         gGet(`/deviceManagement/managedDevices/${id}/deviceCompliancePolicyStates?$top=20`)
       ]);
       const d = device.status === "fulfilled" ? device.value : null;
+      const deviceError = device.status === "rejected" ? device.reason?.message : null;
       const policyStates = policies.status === "fulfilled" ? (policies.value.value || []) : [];
       const failingPolicies = policyStates.filter(p => p.state !== "compliant" && p.state !== "notApplicable");
+      if (!d) {
+        context.res = { status: 502, body: { error: deviceError || "Graph API returned no device data", deviceId: id } };
+        return;
+      }
       context.res = { body: { device: d, policyStates, failingPolicies } };
       return;
     }
