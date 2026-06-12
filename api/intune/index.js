@@ -125,7 +125,7 @@ module.exports = async function(context, req) {
     // Single device detail + compliance policies
     if (action === "device" && id) {
       const [device, policies] = await Promise.allSettled([
-        gGet(`/deviceManagement/managedDevices/${id}?$select=${DEVICE_SELECT},physicalMemoryInBytes,chassisType,joinType,azureADRegistered,azureADDeviceId`),
+        gGet(`/deviceManagement/managedDevices/${id}?$select=${DEVICE_SELECT},physicalMemoryInBytes,chassisType,joinType,azureADRegistered`),
         gGet(`/deviceManagement/managedDevices/${id}/deviceCompliancePolicyStates?$top=20`)
       ]);
       const d = device.status === "fulfilled" ? device.value : null;
